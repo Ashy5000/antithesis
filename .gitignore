@@ -1,0 +1,5 @@
+node_serial/node_modules
+venv
+verilog/pack.fs
+initramfs
+initramfs.cpio.gz

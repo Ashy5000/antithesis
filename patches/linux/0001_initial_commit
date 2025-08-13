@@ -1,0 +1,507 @@
+commit a968b39fda8a5941b30de2458c10a53a7501dc2d
+Author: Ashy5000 <ashydashy5000@gmail.com>
+Date:   Tue Aug 12 23:44:33 2025 -0700
+
+    Antithesis driver initial commit
+
+diff --git a/drivers/gpu/drm/Kconfig b/drivers/gpu/drm/Kconfig
+index f7ea8e895..e47ab7ad0 100644
+--- a/drivers/gpu/drm/Kconfig
++++ b/drivers/gpu/drm/Kconfig
+@@ -324,6 +324,8 @@ source "drivers/gpu/drm/qxl/Kconfig"
+ 
+ source "drivers/gpu/drm/virtio/Kconfig"
+ 
++source "drivers/gpu/drm/antithesis/Kconfig"
++
+ source "drivers/gpu/drm/msm/Kconfig"
+ 
+ source "drivers/gpu/drm/fsl-dcu/Kconfig"
+diff --git a/drivers/gpu/drm/Makefile b/drivers/gpu/drm/Makefile
+index 5050ac32b..16ba1b552 100644
+--- a/drivers/gpu/drm/Makefile
++++ b/drivers/gpu/drm/Makefile
+@@ -191,6 +191,7 @@ obj-$(CONFIG_DRM_SUN4I) += sun4i/
+ obj-y			+= tilcdc/
+ obj-$(CONFIG_DRM_QXL) += qxl/
+ obj-$(CONFIG_DRM_VIRTIO_GPU) += virtio/
++obj-$(CONFIG_DRM_ANTITHESIS_GPU) += antithesis/
+ obj-$(CONFIG_DRM_MSM) += msm/
+ obj-$(CONFIG_DRM_TEGRA) += tegra/
+ obj-$(CONFIG_DRM_STM) += stm/
+diff --git a/drivers/gpu/drm/antithesis/Kconfig b/drivers/gpu/drm/antithesis/Kconfig
+new file mode 100644
+index 000000000..bb01d8f6f
+--- /dev/null
++++ b/drivers/gpu/drm/antithesis/Kconfig
+@@ -0,0 +1,8 @@
++# SPDX-License-Identifier: GPL-2.0-only
++config DRM_ANTITHESIS_GPU
++	tristate "Antithesis GPU driver"
++	depends on DRM && MMU
++	select DRM_KMS_HELPER
++	select DRM_GEM_SHMEM_HELPER
++	help
++	   This is the driver for the Antithesis GPU.
+diff --git a/drivers/gpu/drm/antithesis/Makefile b/drivers/gpu/drm/antithesis/Makefile
+new file mode 100644
+index 000000000..385876088
+--- /dev/null
++++ b/drivers/gpu/drm/antithesis/Makefile
+@@ -0,0 +1,8 @@
++# SPDX-License-Identifier: GPL-2.0
++#
++# Makefile for the drm device driver.  This driver provides support for the
++# Direct Rendering Infrastructure (DRI) in XFree86 4.1.0 and higher.
++
++antithesis-gpu-y := antithesis_alloc.o antithesis_pipeline.o antithesis.o
++
++obj-$(CONFIG_DRM_ANTITHESIS_GPU) += antithesis.o antithesis_alloc.o antithesis_pipeline.o
+diff --git a/drivers/gpu/drm/antithesis/antithesis.c b/drivers/gpu/drm/antithesis/antithesis.c
+new file mode 100644
+index 000000000..5975a8b25
+--- /dev/null
++++ b/drivers/gpu/drm/antithesis/antithesis.c
+@@ -0,0 +1,207 @@
++#include <linux/module.h>
++#include <linux/pci.h>
++
++#include <drm/drm_drv.h>
++#include <drm/drm.h>
++#include <drm/drm_drv.h>
++#include <drm/drm_file.h>
++#include <drm/drm_ioctl.h>
++#include <drm/drm_atomic_state_helper.h>
++#include <drm/drm_probe_helper.h>
++#include <drm/drm_modeset_helper_vtables.h>
++#include <drm/drm_edid.h>
++#include <drm/drm_gem_shmem_helper.h>
++#include <drm/drm_modeset_helper.h>
++#include <drm/drm_framebuffer.h>
++#include <drm/drm_damage_helper.h>
++#include <drm/drm_gem_framebuffer_helper.h>
++#include <drm/drm_simple_kms_helper.h>
++#include <drm/drm_managed.h>
++
++#include "antithesis_alloc.h"
++#include "antithesis_pipeline.h"
++
++#define DRV_NAME "antithesis"
++#define PCI_VENDOR_ID_ANTITHESIS 0xeeee
++#define PCI_DEVICE_ID_ANTITHESIS 0xeeee
++#define ANTITHESIS_BYTES_PER_PIX 4
++
++#define MINIMAL
++
++struct antithesis_state {
++	struct antithesis_alloc_dev *alloc_dev;
++	struct antithesis_alloc_agg *agg;
++	struct antithesis_pipeline_data_initial *pipeline_in;
++};
++
++static void antithesis_state_free(struct antithesis_state *state)
++{
++	antithesis_alloc_dev_free(state->alloc_dev);
++	kfree(state->agg);
++	kfree(state->pipeline_in);
++	kfree(state);
++}
++
++static const struct pci_device_id pci_table[] = {
++	{
++		PCI_DEVICE(PCI_VENDOR_ID_ANTITHESIS, PCI_DEVICE_ID_ANTITHESIS),
++	},
++	{}
++};
++
++static int antithesis_pci_init(struct pci_dev *pdev,
++			       struct antithesis_state *state)
++{
++	int ret = 0;
++
++	// Enable the PCI device
++	ret = pci_enable_device(pdev);
++	if (ret) {
++		return ret;
++	}
++
++	// Take control of the device
++	ret = pci_request_regions(pdev, DRV_NAME);
++	if (ret) {
++		pci_disable_device(pdev);
++		return ret;
++	}
++
++	state->alloc_dev = antithesis_alloc_dev_alloc(pdev);
++
++	return 0;
++}
++
++static void antithesis_pci_deinit(struct pci_dev *pdev)
++{
++	// Disable the PCI device
++	pci_disable_device(pdev);
++}
++
++#ifdef DRM
++static int antithesis_dumb_create(struct drm_file *file_priv,
++				  struct drm_device *dev,
++				  struct drm_mode_create_dumb *args)
++{
++	args->pitch = args->width * ANTITHESIS_BYTES_PER_PIX;
++	args->size = args->pitch * args->height;
++	struct antithesis_state *state = dev->dev_private;
++	struct antithesis_alloc_agg *agg =
++		antithesis_alloc_agg_alloc(state->alloc_dev, args->size);
++	if (IS_ERR(agg)) {
++		return PTR_ERR(agg);
++	}
++	args->handle =
++		0; // Essentially ID. We are only using one agg (for now), so can just be set to 0.
++	state->agg = agg;
++
++	return 0;
++}
++
++static const struct file_operations antithesis_fops = {
++	.open = drm_open,
++	.release = drm_release,
++	.unlocked_ioctl = drm_ioctl,
++	.compat_ioctl = drm_compat_ioctl,
++	.poll = drm_poll,
++	.read = drm_read,
++	.llseek = noop_llseek,
++	.mmap = antithesis_alloc_mmap
++};
++
++static const struct drm_driver driver = {
++	.driver_features = 0,
++	.name = "antithesis",
++	.dumb_create = antithesis_dumb_create,
++	.fops = &antithesis_fops,
++};
++
++static void antithesis_plane_update(struct drm_plane *plane,
++				    struct drm_atomic_state *drm_state)
++{
++	struct antithesis_state *state = plane->dev->dev_private;
++	antithesis_pipeline_func(state->pipeline_in);
++}
++
++static struct drm_device *antithesis_drm_init(struct pci_dev *pdev,
++					      struct antithesis_state *state)
++{
++	// Allocate device
++	struct drm_device *drm_dev = drm_dev_alloc(&driver, &pdev->dev);
++
++	// Load state onto DRM device
++	drm_dev->dev_private = state;
++
++	// Register the device
++	int rc = drm_dev_register(drm_dev, 0);
++	if (rc > 0) {
++		goto err;
++	}
++	return drm_dev;
++err:
++	drm_dev_put(drm_dev);
++	return ERR_PTR(rc);
++}
++
++#endif
++
++static int antithesis_probe(struct pci_dev *pdev,
++			    const struct pci_device_id *ent)
++{
++	int ret = 0;
++
++	// Allocate space for state
++	struct antithesis_state *state =
++		kzalloc(sizeof(struct antithesis_state), GFP_KERNEL);
++
++	ret = antithesis_pci_init(pdev, state);
++
++	printk(KERN_NOTICE "Antithesis init success!");
++
++#ifndef MINIMAL
++
++#ifdef DRM
++
++	struct drm_device *drm_dev = antithesis_drm_init(pdev, state);
++	if (IS_ERR(drm_dev)) {
++		ret = PTR_ERR(drm_dev);
++		antithesis_pci_deinit(pdev);
++	}
++
++#else
++
++	extern unsigned int *mmap_mem;
++	extern unsigned int mmap_size;
++	mmap_mem = kmalloc(sizeof(*mmap_mem), GFP_KERNEL);
++	mmap_size = 1;
++	mmap_mem[0] = 0xdeadbeef;
++
++#endif
++
++	state->pipeline_in = kmalloc(sizeof(*state->pipeline_in), GFP_KERNEL);
++	state->pipeline_in->agg = state->agg;
++	state->pipeline_in->dev = state->alloc_dev;
++
++#endif
++
++	return ret;
++}
++
++static void antithesis_remove(struct pci_dev *pdev)
++{
++	struct antithesis_state *state = pci_get_drvdata(pdev);
++
++	antithesis_state_free(state);
++	antithesis_pci_deinit(pdev);
++}
++
++static struct pci_driver antithesis_driver = {
++	.name = DRV_NAME,
++	.id_table = pci_table,
++	.probe = antithesis_probe,
++	.remove = antithesis_remove,
++};
++
++module_pci_driver(antithesis_driver);
++
++MODULE_LICENSE("GPL");
+diff --git a/drivers/gpu/drm/antithesis/antithesis_alloc.c b/drivers/gpu/drm/antithesis/antithesis_alloc.c
+new file mode 100644
+index 000000000..eb2e142b1
+--- /dev/null
++++ b/drivers/gpu/drm/antithesis/antithesis_alloc.c
+@@ -0,0 +1,100 @@
++#include "antithesis_alloc.h"
++
++struct antithesis_alloc_dev *antithesis_alloc_dev_alloc(struct pci_dev *pdev)
++{
++	resource_size_t pciaddr = pci_resource_start(pdev, 0);
++	struct antithesis_alloc_dev *adev = kzalloc(sizeof(*adev), GFP_KERNEL);
++
++	adev->regs = ioremap(pciaddr, 32);
++	adev->objs = kzalloc(sizeof(struct antithesis_alloc_obj) *
++				     ANTITHESIS_ALLOC_VRAM_OBJS,
++			     GFP_KERNEL);
++	for (unsigned int i = 0; i < ANTITHESIS_ALLOC_VRAM_OBJS; i++) {
++		adev->objs[i].addr = i;
++	}
++	return adev;
++}
++
++void antithesis_alloc_dev_free(struct antithesis_alloc_dev *adev)
++{
++	kfree(adev->objs);
++	kfree(adev);
++}
++
++struct antithesis_alloc_obj *
++antithesis_alloc_obj_alloc(struct antithesis_alloc_dev *adev)
++{
++	struct antithesis_alloc_obj *res = ERR_PTR(-ENOMEM);
++	for (unsigned int i = 0; i < ANTITHESIS_ALLOC_VRAM_OBJS; i++) {
++		if (!adev->objs[i].alloced) {
++			adev->objs[i].alloced = true;
++			res = adev->objs + i;
++			break;
++		}
++	}
++	return res;
++}
++
++void antithesis_alloc_obj_write(struct antithesis_alloc_dev *adev,
++				struct antithesis_alloc_obj *obj, void *data)
++{
++	for (unsigned int i = 0; i < ANTITHESIS_ALLOC_OBJ_SIZE; i++) {
++		adev->regs[ANTITHESIS_REG_WRIT] = 0;
++		adev->regs[ANTITHESIS_REG_ADDR] =
++			(obj->addr * ANTITHESIS_ALLOC_OBJ_SIZE) + i;
++		adev->regs[ANTITHESIS_REG_DATA] = ((unsigned int *)data)[i];
++		adev->regs[ANTITHESIS_REG_WRIT] = 1;
++	}
++}
++
++void antithesis_alloc_obj_free(struct antithesis_alloc_dev *adev,
++			       struct antithesis_alloc_obj *obj)
++{
++	adev->objs[obj->addr].alloced = false;
++}
++
++struct antithesis_alloc_agg *
++antithesis_alloc_agg_alloc(struct antithesis_alloc_dev *adev, unsigned int size)
++{
++	struct antithesis_alloc_agg *agg = kmalloc(sizeof(*agg), GFP_KERNEL);
++	agg->obj_count = size / ANTITHESIS_ALLOC_OBJ_SIZE + 1;
++	agg->objs = kmalloc(sizeof(*agg->objs) * agg->obj_count, GFP_KERNEL);
++	for (unsigned int i = 0; i < size / agg->obj_count; i++) {
++		struct antithesis_alloc_obj *obj =
++			antithesis_alloc_obj_alloc(adev);
++		if (IS_ERR(obj)) {
++			kfree(agg->objs);
++			kfree(agg);
++			return (struct antithesis_alloc_agg *)obj;
++		} else {
++			agg->objs[i] = obj;
++		}
++	}
++	return agg;
++}
++
++void antithesis_alloc_agg_free(struct antithesis_alloc_dev *adev,
++			       struct antithesis_alloc_agg *agg)
++{
++	for (unsigned int i = 0; i < agg->obj_count; i++) {
++		antithesis_alloc_obj_free(adev, agg->objs[i]);
++	}
++	kfree(agg->objs);
++	kfree(agg);
++}
++
++unsigned long mmap_mem_size = 0;
++unsigned int *mmap_mem = NULL;
++
++int antithesis_alloc_mmap(struct file *filp, struct vm_area_struct *vma)
++{
++	unsigned long len = vma->vm_end - vma->vm_start;
++	mmap_mem = kmalloc(len, GFP_KERNEL);
++	mmap_mem_size = len;
++	for (unsigned long i = (unsigned long)mmap_mem;
++	     i < (unsigned long)mmap_mem + mmap_mem_size; i += PAGE_SIZE) {
++		SetPageReserved(virt_to_page(i));
++	}
++	unsigned long pfn = virt_to_phys((void *)mmap_mem) >> PAGE_SHIFT;
++	return remap_pfn_range(vma, vma->vm_start, pfn, len, vma->vm_page_prot);
++}
+diff --git a/drivers/gpu/drm/antithesis/antithesis_alloc.h b/drivers/gpu/drm/antithesis/antithesis_alloc.h
+new file mode 100644
+index 000000000..39296c514
+--- /dev/null
++++ b/drivers/gpu/drm/antithesis/antithesis_alloc.h
+@@ -0,0 +1,48 @@
++#ifndef ANTITHESIS_ALLOC_H_
++#define ANTITHESIS_ALLOC_H_
++
++#include <linux/types.h>
++#include <linux/pci.h>
++
++#define ANTITHESIS_ALLOC_OBJ_SIZE 32
++#define ANTITHESIS_ALLOC_VRAM_SIZE ANTITHESIS_ALLOC_OBJ_SIZE * 64
++#define ANTITHESIS_ALLOC_VRAM_OBJS \
++	ANTITHESIS_ALLOC_VRAM_SIZE / ANTITHESIS_ALLOC_OBJ_SIZE
++#define ANTITHESIS_REG_ADDR 0
++#define ANTITHESIS_REG_DATA 1
++#define ANTITHESIS_REG_WRIT 2
++
++struct antithesis_alloc_dev {
++	volatile unsigned int __iomem *regs;
++	struct antithesis_alloc_obj *objs;
++};
++
++struct antithesis_alloc_obj {
++	bool alloced;
++	unsigned int addr;
++};
++
++struct antithesis_alloc_agg {
++	struct antithesis_alloc_obj **objs;
++	size_t obj_count;
++};
++
++struct antithesis_alloc_dev *antithesis_alloc_dev_alloc(struct pci_dev *pdev);
++void antithesis_alloc_dev_free(struct antithesis_alloc_dev *adev);
++
++struct antithesis_alloc_obj *
++antithesis_alloc_obj_alloc(struct antithesis_alloc_dev *adev);
++void antithesis_alloc_obj_write(struct antithesis_alloc_dev *adev,
++				struct antithesis_alloc_obj *obj, void *data);
++void antithesis_alloc_obj_free(struct antithesis_alloc_dev *adev,
++			       struct antithesis_alloc_obj *obj);
++
++struct antithesis_alloc_agg *
++antithesis_alloc_agg_alloc(struct antithesis_alloc_dev *adev,
++			   unsigned int size);
++void antithesis_alloc_agg_free(struct antithesis_alloc_dev *adev,
++			       struct antithesis_alloc_agg *agg);
++
++int antithesis_alloc_mmap(struct file *filp, struct vm_area_struct *vma);
++
++#endif // ANTITHESIS_ALLOC_H_
+diff --git a/drivers/gpu/drm/antithesis/antithesis_pipeline.c b/drivers/gpu/drm/antithesis/antithesis_pipeline.c
+new file mode 100644
+index 000000000..fa12bc827
+--- /dev/null
++++ b/drivers/gpu/drm/antithesis/antithesis_pipeline.c
+@@ -0,0 +1,28 @@
++#include <linux/module.h>
++#include "antithesis_pipeline.h"
++#include "antithesis_alloc.h"
++
++extern unsigned int *mmap_mem;
++extern unsigned long mmap_mem_size;
++
++antithesis_pipeline_stage_initial
++{
++	static struct antithesis_pipeline_data_intermediate
++		*internal_intermediate = NULL;
++	if (internal_intermediate == NULL) {
++		internal_intermediate =
++			kzalloc(sizeof(*internal_intermediate), GFP_KERNEL);
++	}
++	internal_intermediate->data = mmap_mem;
++	internal_intermediate->data_size = mmap_mem_size;
++	return internal_intermediate;
++}
++
++antithesis_pipeline_stage_final
++{
++	for (unsigned int i = 0; i < in->agg->obj_count; i++) {
++		antithesis_alloc_obj_write(in->dev, in->agg->objs[i], in->data + (i * ANTITHESIS_ALLOC_OBJ_SIZE));
++	}
++}
++
++antithesis_pipeline(intermediate)
+diff --git a/drivers/gpu/drm/antithesis/antithesis_pipeline.h b/drivers/gpu/drm/antithesis/antithesis_pipeline.h
+new file mode 100644
+index 000000000..eda3bb4cb
+--- /dev/null
++++ b/drivers/gpu/drm/antithesis/antithesis_pipeline.h
+@@ -0,0 +1,35 @@
++#ifndef ANTITHESIS_PIPELINE_H_
++#define ANTITHESIS_PIPELINE_H_
++
++#define antithesis_pipeline_stage_initial                     \
++	static struct antithesis_pipeline_data_intermediate * \
++	antithesis_pipeline_stage_initial_func(               \
++		struct antithesis_pipeline_data_initial *in)
++#define antithesis_pipeline_stage_intermediate(name)               \
++	static struct antithesis_pipeline_data_intermediate *name( \
++		struct antithesis_pipeline_data_intermediate *in)
++#define antithesis_pipeline_stage_final         \
++	static void antithesis_pipeline_stage_final_func( \
++		struct antithesis_pipeline_data_intermediate *in)
++
++#define antithesis_pipeline(inner) void antithesis_pipeline_func(struct antithesis_pipeline_data_initial *in) { struct antithesis_pipeline_data_intermediate *intermediate = antithesis_pipeline_stage_initial_func(in); intermediate = inner; antithesis_pipeline_stage_final_func(intermediate); }
++
++struct antithesis_pipeline_data_initial {
++	struct antithesis_alloc_dev *dev;
++	struct antithesis_alloc_agg *agg;
++};
++
++struct antithesis_pipeline_data_intermediate {
++	unsigned int *data;
++	unsigned long data_size;
++	struct antithesis_alloc_dev *dev;
++	struct antithesis_alloc_agg *agg;
++	// struct antithesis_pipeline_diff {
++	// 	unsigned int sector;
++	// 	unsigned int *data;
++	// } *diff;
++};
++
++void antithesis_pipeline_func(struct antithesis_pipeline_data_initial *in);
++
++#endif // ANTITHESIS_PIPELINE_H

@@ -1,0 +1,111 @@
+commit ae2a7a02e72e4c28dac8d09c553e180b92f37fcd
+Author: Ashy5000 <ashydashy5000@gmail.com>
+Date:   Tue Aug 12 23:45:51 2025 -0700
+
+    Antithesis driver initial commit
+
+diff --git a/hw/misc/Kconfig b/hw/misc/Kconfig
+index 4e35657..b6c0344 100644
+--- a/hw/misc/Kconfig
++++ b/hw/misc/Kconfig
+@@ -1,3 +1,8 @@
++config ANTITHESIS_DEVICE
++    bool
++    default y if PCI_DEVICES
++    depends on PCI
++
+ config APPLESMC
+     bool
+     depends on ISA_BUS
+diff --git a/hw/misc/antithesis.c b/hw/misc/antithesis.c
+new file mode 100644
+index 0000000..dd960af
+--- /dev/null
++++ b/hw/misc/antithesis.c
+@@ -0,0 +1,74 @@
++#include "qemu/osdep.h"
++#include "ui/console.h"
++#include "hw/pci/pci_device.h"
++
++#define TYPE_PCI_ANTITHESIS "antithesis"
++
++typedef struct AntithesisState {
++    PCIDevice parent_obj;
++    MemoryRegion mmio;
++} AntithesisState;
++
++static uint64_t antithesis_read(void *opaque, hwaddr addr, unsigned size)
++{
++    return 0;
++}
++
++static void antithesis_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
++{
++}
++
++static const MemoryRegionOps antithesis_ops = {
++    .read = antithesis_read,
++    .write = antithesis_write,
++    .endianness = DEVICE_LITTLE_ENDIAN,
++    .impl = {
++        .min_access_size = 1,
++        .max_access_size = 1,
++    },
++};
++
++
++static void antithesis_init(PCIDevice *pdev, Error **err)
++{
++    AntithesisState *state = OBJECT_CHECK(AntithesisState, pdev, TYPE_PCI_ANTITHESIS);
++    uint8_t *pci_conf = pdev->config;
++    pci_conf[PCI_INTERRUPT_PIN] = 0;
++    memory_region_init_io(&state->mmio, OBJECT(state), &antithesis_ops, state, "antithesis-mmio", 32);
++}
++
++static void antithesis_exit(PCIDevice *pdev)
++{
++}
++
++static void pci_antithesis_init_class(ObjectClass *klass, const void *data) {
++    DeviceClass *dc = DEVICE_CLASS(klass);
++    PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
++
++    k->realize = antithesis_init;
++    k->exit = antithesis_exit;
++    k->vendor_id = 0xeeee;
++    k->device_id = 0xeeee;
++    k->revision = 0x00;
++    k->class_id = PCI_CLASS_OTHERS;
++    dc->desc = "Antithesis GPU";
++    set_bit(DEVICE_CATEGORY_MISC, dc->categories);
++}
++
++
++static const TypeInfo antithesis_info = {
++    .name = TYPE_PCI_ANTITHESIS,
++    .parent = TYPE_PCI_DEVICE,
++    .instance_size = sizeof(AntithesisState),
++    .class_init = pci_antithesis_init_class,
++    .interfaces = (InterfaceInfo[]){
++        { INTERFACE_CONVENTIONAL_PCI_DEVICE },
++        { },
++    },
++};
++
++static void antithesis_register_types(void) {
++    type_register_static(&antithesis_info);
++}
++
++type_init(antithesis_register_types)
+diff --git a/hw/misc/meson.build b/hw/misc/meson.build
+index b1d8d8e..0c9deb1 100644
+--- a/hw/misc/meson.build
++++ b/hw/misc/meson.build
+@@ -40,6 +40,7 @@ subdir('macio')
+ # ivshmem devices
+ system_ss.add(when: 'CONFIG_IVSHMEM_DEVICE', if_true: files('ivshmem-pci.c'))
+ system_ss.add(when: 'CONFIG_IVSHMEM_FLAT_DEVICE', if_true: files('ivshmem-flat.c'))
++system_ss.add(when: 'CONFIG_ANTITHESIS_DEVICE', if_true: files('antithesis.c'))
+ 
+ system_ss.add(when: 'CONFIG_ALLWINNER_SRAMC', if_true: files('allwinner-sramc.c'))
+ system_ss.add(when: 'CONFIG_ALLWINNER_A10_CCM', if_true: files('allwinner-a10-ccm.c'))
