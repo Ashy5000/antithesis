@@ -1,0 +1,273 @@
+commit f4c006c3bdb690859fd1e12b7f8a1c90832b5df9
+Author: Ashy5000 <ashydashy5000@gmail.com>
+Date:   Thu Aug 14 14:07:51 2025 -0700
+
+    Implements prototype VRAM allocator
+
+diff --git a/hw/misc/antithesis.c b/hw/misc/antithesis.c
+index dd960af..4a99905 100644
+--- a/hw/misc/antithesis.c
++++ b/hw/misc/antithesis.c
+@@ -1,21 +1,144 @@
++#include <stdio.h>
+ #include "qemu/osdep.h"
+-#include "ui/console.h"
+ #include "hw/pci/pci_device.h"
+ 
+ #define TYPE_PCI_ANTITHESIS "antithesis"
+ 
++#define ANTITHESIS_REG_CMND 0
++#define ANTITHESIS_REG_APLY 1
++#define ANTITHESIS_REG_ADDR 2
++#define ANTITHESIS_REG_SIZE 3
++#define ANTITHESIS_OFFSET_DATA 4
++
++typedef enum AntithesisCommandType {
++	ANTITHESIS_COMMAND_WRITE,
++    ANTITHESIS_COMMAND_READ,
++} AntithesisCommandType;
++
++typedef struct AntithesisCommandWritePayload {
++    unsigned int addr;
++    uint8_t *buf;
++    unsigned int size;
++} AntithesisCommandWritePayload;
++
++typedef struct AntithesisCommandReadPayload {
++    unsigned int addr;
++} AntithesisCommandReadPayload;
++
++AntithesisCommandWritePayload *payload_write;
++AntithesisCommandReadPayload *payload_read;
++
++typedef union AntithesisCommandPayload {
++    AntithesisCommandWritePayload *write;
++    AntithesisCommandReadPayload *read;
++} AntithesisCommandPayload;
++
++typedef struct AntithesisCommand {
++    AntithesisCommandType type;
++    AntithesisCommandPayload *payload;
++} AntithesisCommand;
++
++FILE *logfile;
++
+ typedef struct AntithesisState {
+     PCIDevice parent_obj;
+     MemoryRegion mmio;
++
++    AntithesisCommand *cmd;
++    bool blocking;
++
++    uint8_t *vram;
++    unsigned int vram_size;
+ } AntithesisState;
+ 
+ static uint64_t antithesis_read(void *opaque, hwaddr addr, unsigned size)
+ {
+-    return 0;
++    AntithesisState *state = opaque;
++    switch (addr) {
++        case ANTITHESIS_REG_APLY:
++            return state->blocking;
++        default:
++            if (state->cmd->type == ANTITHESIS_COMMAND_READ) {
++                return state->vram[addr - ANTITHESIS_OFFSET_DATA + state->cmd->payload->read->addr];
++            }
++            fprintf(logfile, "Register %ld is not readable.\n", addr);
++            fflush(logfile);
++            return 0;
++    }
++}
++
++static void antithesis_command_execute(AntithesisState *state, AntithesisCommand *cmd) {
++    AntithesisCommandPayload *payload = cmd->payload;
++    state->blocking = true;
++    switch (cmd->type) {
++        case ANTITHESIS_COMMAND_WRITE:
++            ; // clang sucks
++            unsigned int end = payload->write->addr + payload->write->size;
++            if (end > state->vram_size) {
++                state->vram = realloc(state->vram, end);
++                state->vram_size = end;
++            }
++            memcpy(state->vram + payload->write->addr, payload->write->buf, payload->write->size);
++            break;
++        case ANTITHESIS_COMMAND_READ:
++            fprintf(logfile, "WARN: command does not need explicit execution. (code: %d\n", cmd->type);
++            fflush(logfile);
++            break;
++        default:
++            fprintf(logfile, "Invalid command! (code: %d)\n", cmd->type);
++            fflush(logfile);
++    }
++    state->blocking = false;
+ }
+ 
+ static void antithesis_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
+ {
++    AntithesisState *state = opaque;
++
++    switch (addr) {
++        case ANTITHESIS_REG_CMND:
++            if (state->cmd->type == val) {
++                break;
++            }
++
++            switch (val) {
++                case ANTITHESIS_COMMAND_WRITE:
++                    state->cmd->payload->write = payload_write;
++                    break;
++                case ANTITHESIS_COMMAND_READ:
++                    state->cmd->payload->read = payload_read;
++                    break;
++                default:
++                    fprintf(logfile, "Invalid command! (code: %d\n)", state->cmd->type);
++                    fflush(logfile);
++                    break;
++            }
++            state->cmd->type = val;
++
++            break;
++        case ANTITHESIS_REG_APLY:
++            if (val) {
++                antithesis_command_execute(state, state->cmd);
++            }
++            break;
++        case ANTITHESIS_REG_ADDR:
++            if (state->cmd->type == ANTITHESIS_COMMAND_WRITE) {
++                state->cmd->payload->write->addr = val;
++            } else if (state->cmd->type == ANTITHESIS_COMMAND_READ) {
++                state->cmd->payload->read->addr = val;
++            }
++            break;
++        case ANTITHESIS_REG_SIZE:
++            if (state->cmd->type == ANTITHESIS_COMMAND_WRITE) {
++                state->cmd->payload->write->size = val;
++                state->cmd->payload->write->buf = realloc(state->cmd->payload->write->buf, val);
++            }
++            break;
++        default:
++            if (state->cmd->type == ANTITHESIS_COMMAND_WRITE) {
++                state->cmd->payload->write->buf[addr - ANTITHESIS_OFFSET_DATA] = val;
++            }
++    }
+ }
+ 
+ static const MemoryRegionOps antithesis_ops = {
+@@ -32,13 +155,25 @@ static const MemoryRegionOps antithesis_ops = {
+ static void antithesis_init(PCIDevice *pdev, Error **err)
+ {
+     AntithesisState *state = OBJECT_CHECK(AntithesisState, pdev, TYPE_PCI_ANTITHESIS);
++    state->cmd = malloc(sizeof(*state->cmd));
++    state->cmd->payload = malloc(sizeof(*state->cmd->payload));
++    payload_write = malloc(sizeof(*payload_write));
++    payload_read = malloc(sizeof(*payload_read));
+     uint8_t *pci_conf = pdev->config;
+     pci_conf[PCI_INTERRUPT_PIN] = 0;
+     memory_region_init_io(&state->mmio, OBJECT(state), &antithesis_ops, state, "antithesis-mmio", 32);
++    pci_register_bar(pdev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY, &state->mmio);
++    logfile = fopen("/home/ashy5000/dev/gpu/antithesis/logfile.txt", "w");
+ }
+ 
+ static void antithesis_exit(PCIDevice *pdev)
+ {
++    AntithesisState *state = OBJECT_CHECK(AntithesisState, pdev, TYPE_PCI_ANTITHESIS);
++    free(payload_write);
++    free(payload_read);
++    free(state->cmd->payload);
++    free(state->cmd);
++    fclose(logfile);
+ }
+ 
+ static void pci_antithesis_init_class(ObjectClass *klass, const void *data) {
+diff --git a/python/scripts/mkvenv.py b/python/scripts/mkvenv.py
+index 8ac5b0b..68d69a1 100644
+--- a/python/scripts/mkvenv.py
++++ b/python/scripts/mkvenv.py
+@@ -94,17 +94,35 @@
+ HAVE_DISTLIB = True
+ try:
+     import distlib.scripts
+-    import distlib.version
+ except ImportError:
+     try:
+         # Reach into pip's cookie jar.  pylint and flake8 don't understand
+         # that these imports will be used via distlib.xxx.
+         from pip._vendor import distlib
+         import pip._vendor.distlib.scripts  # noqa, pylint: disable=unused-import
+-        import pip._vendor.distlib.version  # noqa, pylint: disable=unused-import
+     except ImportError:
+         HAVE_DISTLIB = False
+ 
++# pip 25.2 does not vendor distlib.version, but it uses vendored packaging.version
++HAVE_DISTLIB_VERSION = True
++try:
++    import distlib.version
++except ImportError:
++    try:
++        import pip._vendor.distlib.version  # noqa, pylint: disable=unused-import
++    except ImportError:
++        HAVE_DISTLIB_VERSION = False
++
++HAVE_PACKAGING_VERSION = True
++try:
++    # Do not bother importing non-vendored packaging, because it is not in stdlib.
++    import pip._vendor.packaging as packaging
++    import pip._vendor.packaging.version  # noqa, pylint: disable=unused-import
++    import pip._vendor.packaging.requirements  # noqa, pylint: disable=unused-import
++except ImportError:
++    HAVE_PACKAGING_VERSION = False
++
++
+ # Try to load tomllib, with a fallback to tomli.
+ # HAVE_TOMLLIB is checked below, just-in-time, so that mkvenv does not fail
+ # outside the venv or before a potential call to ensurepip in checkpip().
+@@ -133,6 +151,29 @@ class Ouch(RuntimeError):
+     """An Exception class we can't confuse with a builtin."""
+ 
+ 
++class Matcher:
++    def __init__(self, name_and_constraint: str):
++        """Create a matcher from a requirement-like string."""
++        if HAVE_DISTLIB_VERSION:
++            self._m = distlib.version.LegacyMatcher(name_and_constraint)
++        elif HAVE_PACKAGING_VERSION:
++            self._m = packaging.requirements.Requirement(name_and_constraint)
++        else:
++            raise Ouch("found neither distlib.version nor packaging.version")
++        self.name = self._m.name
++
++    def match(self, version: str) -> bool:
++        """Return True if `version` satisfies the stored constraint."""
++        if HAVE_DISTLIB_VERSION:
++            return self._m.match(distlib.version.LegacyVersion(version))
++        elif HAVE_PACKAGING_VERSION:
++            return self._m.specifier.contains(packaging.version.Version(version), prereleases=True)
++
++    def __repr__(self):
++        """Stable debug representation delegated to the backend."""
++        return self._m.__repr__()
++
++
+ class QemuEnvBuilder(venv.EnvBuilder):
+     """
+     An extension of venv.EnvBuilder for building QEMU's configure-time venv.
+@@ -669,7 +710,7 @@ def _do_ensure(
+     canary = None
+     for name, info in group.items():
+         constraint = _make_version_constraint(info, False)
+-        matcher = distlib.version.LegacyMatcher(name + constraint)
++        matcher = Matcher(name + constraint)
+         print(f"mkvenv: checking for {matcher}", file=sys.stderr)
+ 
+         dist: Optional[Distribution] = None
+@@ -683,7 +724,7 @@ def _do_ensure(
+             # Always pass installed package to pip, so that they can be
+             # updated if the requested version changes
+             or not _is_system_package(dist)
+-            or not matcher.match(distlib.version.LegacyVersion(dist.version))
++            or not matcher.match(dist.version)
+         ):
+             absent.append(name + _make_version_constraint(info, True))
+             if len(absent) == 1:

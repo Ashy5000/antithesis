@@ -1,0 +1,275 @@
+commit 54b9b32d60c2c533fa9d05f6303dce2b2a6e6967
+Author: Ashy5000 <ashydashy5000@gmail.com>
+Date:   Thu Aug 14 14:05:33 2025 -0700
+
+    Implements prototype VRAM allocator
+
+diff --git a/drivers/gpu/drm/antithesis/antithesis.c b/drivers/gpu/drm/antithesis/antithesis.c
+index 5975a8b25..4bb4d2a06 100644
+--- a/drivers/gpu/drm/antithesis/antithesis.c
++++ b/drivers/gpu/drm/antithesis/antithesis.c
+@@ -30,14 +30,14 @@
+ 
+ struct antithesis_state {
+ 	struct antithesis_alloc_dev *alloc_dev;
+-	struct antithesis_alloc_agg *agg;
++	struct antithesis_alloc_obj *obj;
+ 	struct antithesis_pipeline_data_initial *pipeline_in;
+ };
+ 
+ static void antithesis_state_free(struct antithesis_state *state)
+ {
+ 	antithesis_alloc_dev_free(state->alloc_dev);
+-	kfree(state->agg);
++	kfree(state->obj);
+ 	kfree(state->pipeline_in);
+ 	kfree(state);
+ }
+@@ -156,6 +156,20 @@ static int antithesis_probe(struct pci_dev *pdev,
+ 
+ 	ret = antithesis_pci_init(pdev, state);
+ 
++	struct antithesis_alloc_obj *obj = antithesis_alloc_obj_alloc(state->alloc_dev, 5);
++	// antithesis_alloc_obj_alloc(state->alloc_dev, 5);
++	char *msg = kmalloc(sizeof(*msg) * 5, GFP_KERNEL);
++	msg[0] = 'H';
++	msg[1] = 'e';
++	msg[2] = 'l';
++	msg[3] = 'l';
++	msg[4] = 'o';
++	antithesis_alloc_obj_write(state->alloc_dev, obj, msg);
++	char *res = antithesis_alloc_obj_read(state->alloc_dev, obj);
++	for (unsigned int i = 0; i < obj->size; i++) {
++		printk(KERN_INFO "Char %ui: %c", i, res[i]);
++	}
++
+ 	printk(KERN_NOTICE "Antithesis init success!");
+ 
+ #ifndef MINIMAL
+diff --git a/drivers/gpu/drm/antithesis/antithesis_alloc.c b/drivers/gpu/drm/antithesis/antithesis_alloc.c
+index eb2e142b1..a989af838 100644
+--- a/drivers/gpu/drm/antithesis/antithesis_alloc.c
++++ b/drivers/gpu/drm/antithesis/antithesis_alloc.c
+@@ -1,17 +1,11 @@
+ #include "antithesis_alloc.h"
++#include <linux/pci.h>
+ 
+ struct antithesis_alloc_dev *antithesis_alloc_dev_alloc(struct pci_dev *pdev)
+ {
+-	resource_size_t pciaddr = pci_resource_start(pdev, 0);
+ 	struct antithesis_alloc_dev *adev = kzalloc(sizeof(*adev), GFP_KERNEL);
+ 
+-	adev->regs = ioremap(pciaddr, 32);
+-	adev->objs = kzalloc(sizeof(struct antithesis_alloc_obj) *
+-				     ANTITHESIS_ALLOC_VRAM_OBJS,
+-			     GFP_KERNEL);
+-	for (unsigned int i = 0; i < ANTITHESIS_ALLOC_VRAM_OBJS; i++) {
+-		adev->objs[i].addr = i;
+-	}
++	adev->pcimem = pci_iomap(pdev, 0, 0);
+ 	return adev;
+ }
+ 
+@@ -22,65 +16,57 @@ void antithesis_alloc_dev_free(struct antithesis_alloc_dev *adev)
+ }
+ 
+ struct antithesis_alloc_obj *
+-antithesis_alloc_obj_alloc(struct antithesis_alloc_dev *adev)
++antithesis_alloc_obj_alloc(struct antithesis_alloc_dev *adev, unsigned int size)
+ {
+-	struct antithesis_alloc_obj *res = ERR_PTR(-ENOMEM);
+-	for (unsigned int i = 0; i < ANTITHESIS_ALLOC_VRAM_OBJS; i++) {
+-		if (!adev->objs[i].alloced) {
++	// A really, really, really bad allocator.
++	for (unsigned int i = 0; i < adev->obj_count; i++) {
++		if (!adev->objs[i].alloced && adev->objs[i].size >= size) {
+ 			adev->objs[i].alloced = true;
+-			res = adev->objs + i;
+-			break;
++			return &adev->objs[i];
+ 		}
+ 	}
++	adev->objs = krealloc(adev->objs, ++adev->obj_count * sizeof(*adev->objs), GFP_KERNEL);
++	struct antithesis_alloc_obj *res = &adev->objs[adev->obj_count - 1];
++	res->alloced = true;
++	res->size = size;
++	res->addr = adev->end;
++	adev->end += size;
+ 	return res;
+ }
+ 
+ void antithesis_alloc_obj_write(struct antithesis_alloc_dev *adev,
+ 				struct antithesis_alloc_obj *obj, void *data)
+ {
+-	for (unsigned int i = 0; i < ANTITHESIS_ALLOC_OBJ_SIZE; i++) {
+-		adev->regs[ANTITHESIS_REG_WRIT] = 0;
+-		adev->regs[ANTITHESIS_REG_ADDR] =
+-			(obj->addr * ANTITHESIS_ALLOC_OBJ_SIZE) + i;
+-		adev->regs[ANTITHESIS_REG_DATA] = ((unsigned int *)data)[i];
+-		adev->regs[ANTITHESIS_REG_WRIT] = 1;
++	iowrite8(ANTITHESIS_COMMAND_WRITE, adev->pcimem + ANTITHESIS_REG_CMND);
++	iowrite8(obj->addr, adev->pcimem + ANTITHESIS_REG_ADDR);
++	iowrite8(obj->size, adev->pcimem + ANTITHESIS_REG_SIZE);
++	wmb();
++	for (unsigned int i = 0; i < obj->size; i++) {
++		iowrite8(((char*)data)[i], adev->pcimem + ANTITHESIS_OFFSET_DATA + i);
+ 	}
++	wmb();
++	iowrite8(1, adev->pcimem + ANTITHESIS_REG_APLY);
++	mb();
++	while (ioread8(adev->pcimem + ANTITHESIS_REG_APLY)) {}
+ }
+ 
+-void antithesis_alloc_obj_free(struct antithesis_alloc_dev *adev,
+-			       struct antithesis_alloc_obj *obj)
+-{
+-	adev->objs[obj->addr].alloced = false;
+-}
+-
+-struct antithesis_alloc_agg *
+-antithesis_alloc_agg_alloc(struct antithesis_alloc_dev *adev, unsigned int size)
++void *antithesis_alloc_obj_read(struct antithesis_alloc_dev *adev, struct antithesis_alloc_obj *obj)
+ {
+-	struct antithesis_alloc_agg *agg = kmalloc(sizeof(*agg), GFP_KERNEL);
+-	agg->obj_count = size / ANTITHESIS_ALLOC_OBJ_SIZE + 1;
+-	agg->objs = kmalloc(sizeof(*agg->objs) * agg->obj_count, GFP_KERNEL);
+-	for (unsigned int i = 0; i < size / agg->obj_count; i++) {
+-		struct antithesis_alloc_obj *obj =
+-			antithesis_alloc_obj_alloc(adev);
+-		if (IS_ERR(obj)) {
+-			kfree(agg->objs);
+-			kfree(agg);
+-			return (struct antithesis_alloc_agg *)obj;
+-		} else {
+-			agg->objs[i] = obj;
+-		}
++	iowrite8(ANTITHESIS_COMMAND_READ, adev->pcimem + ANTITHESIS_REG_CMND);
++	iowrite8(obj->addr, adev->pcimem + ANTITHESIS_REG_ADDR);
++	iowrite8(obj->size, adev->pcimem + ANTITHESIS_REG_SIZE);
++	mb();
++	char *result = kmalloc(obj->size, GFP_KERNEL);
++	for (unsigned int i = 0; i < obj->size; i++) {
++		result[i] = ioread8(adev->pcimem + ANTITHESIS_OFFSET_DATA + i);
+ 	}
+-	return agg;
++	return result;
+ }
+ 
+-void antithesis_alloc_agg_free(struct antithesis_alloc_dev *adev,
+-			       struct antithesis_alloc_agg *agg)
++void antithesis_alloc_obj_free(struct antithesis_alloc_dev *adev,
++			       struct antithesis_alloc_obj *obj)
+ {
+-	for (unsigned int i = 0; i < agg->obj_count; i++) {
+-		antithesis_alloc_obj_free(adev, agg->objs[i]);
+-	}
+-	kfree(agg->objs);
+-	kfree(agg);
++	adev->objs[obj->addr].alloced = false;
+ }
+ 
+ unsigned long mmap_mem_size = 0;
+diff --git a/drivers/gpu/drm/antithesis/antithesis_alloc.h b/drivers/gpu/drm/antithesis/antithesis_alloc.h
+index 39296c514..858c699eb 100644
+--- a/drivers/gpu/drm/antithesis/antithesis_alloc.h
++++ b/drivers/gpu/drm/antithesis/antithesis_alloc.h
+@@ -4,45 +4,43 @@
+ #include <linux/types.h>
+ #include <linux/pci.h>
+ 
+-#define ANTITHESIS_ALLOC_OBJ_SIZE 32
+-#define ANTITHESIS_ALLOC_VRAM_SIZE ANTITHESIS_ALLOC_OBJ_SIZE * 64
+-#define ANTITHESIS_ALLOC_VRAM_OBJS \
+-	ANTITHESIS_ALLOC_VRAM_SIZE / ANTITHESIS_ALLOC_OBJ_SIZE
+-#define ANTITHESIS_REG_ADDR 0
+-#define ANTITHESIS_REG_DATA 1
+-#define ANTITHESIS_REG_WRIT 2
++#define ANTITHESIS_REG_CMND 0
++#define ANTITHESIS_REG_APLY 1
++#define ANTITHESIS_REG_ADDR 2
++#define ANTITHESIS_REG_SIZE 3
++#define ANTITHESIS_OFFSET_DATA 4
++
++enum AntithesisCommandType {
++	ANTITHESIS_COMMAND_WRITE,
++	ANTITHESIS_COMMAND_READ,
++};
+ 
+ struct antithesis_alloc_dev {
+-	volatile unsigned int __iomem *regs;
++	void __iomem *pcimem;
+ 	struct antithesis_alloc_obj *objs;
++	unsigned int obj_count;
++	unsigned int end;
+ };
+ 
+ struct antithesis_alloc_obj {
+ 	bool alloced;
+ 	unsigned int addr;
+-};
+-
+-struct antithesis_alloc_agg {
+-	struct antithesis_alloc_obj **objs;
+-	size_t obj_count;
++	unsigned int size;
+ };
+ 
+ struct antithesis_alloc_dev *antithesis_alloc_dev_alloc(struct pci_dev *pdev);
+ void antithesis_alloc_dev_free(struct antithesis_alloc_dev *adev);
+ 
+ struct antithesis_alloc_obj *
+-antithesis_alloc_obj_alloc(struct antithesis_alloc_dev *adev);
++antithesis_alloc_obj_alloc(struct antithesis_alloc_dev *adev,
++			   unsigned int size);
+ void antithesis_alloc_obj_write(struct antithesis_alloc_dev *adev,
+ 				struct antithesis_alloc_obj *obj, void *data);
++void *antithesis_alloc_obj_read(struct antithesis_alloc_dev *adev,
++				struct antithesis_alloc_obj *obj);
+ void antithesis_alloc_obj_free(struct antithesis_alloc_dev *adev,
+ 			       struct antithesis_alloc_obj *obj);
+ 
+-struct antithesis_alloc_agg *
+-antithesis_alloc_agg_alloc(struct antithesis_alloc_dev *adev,
+-			   unsigned int size);
+-void antithesis_alloc_agg_free(struct antithesis_alloc_dev *adev,
+-			       struct antithesis_alloc_agg *agg);
+-
+ int antithesis_alloc_mmap(struct file *filp, struct vm_area_struct *vma);
+ 
+ #endif // ANTITHESIS_ALLOC_H_
+diff --git a/drivers/gpu/drm/antithesis/antithesis_pipeline.c b/drivers/gpu/drm/antithesis/antithesis_pipeline.c
+index fa12bc827..54aa5d4a0 100644
+--- a/drivers/gpu/drm/antithesis/antithesis_pipeline.c
++++ b/drivers/gpu/drm/antithesis/antithesis_pipeline.c
+@@ -20,9 +20,7 @@ antithesis_pipeline_stage_initial
+ 
+ antithesis_pipeline_stage_final
+ {
+-	for (unsigned int i = 0; i < in->agg->obj_count; i++) {
+-		antithesis_alloc_obj_write(in->dev, in->agg->objs[i], in->data + (i * ANTITHESIS_ALLOC_OBJ_SIZE));
+-	}
++	antithesis_alloc_obj_write(in->dev, in->obj, in->data);
+ }
+ 
+ antithesis_pipeline(intermediate)
+diff --git a/drivers/gpu/drm/antithesis/antithesis_pipeline.h b/drivers/gpu/drm/antithesis/antithesis_pipeline.h
+index eda3bb4cb..de3e869c0 100644
+--- a/drivers/gpu/drm/antithesis/antithesis_pipeline.h
++++ b/drivers/gpu/drm/antithesis/antithesis_pipeline.h
+@@ -16,14 +16,14 @@
+ 
+ struct antithesis_pipeline_data_initial {
+ 	struct antithesis_alloc_dev *dev;
+-	struct antithesis_alloc_agg *agg;
++	struct antithesis_alloc_obj *obj;
+ };
+ 
+ struct antithesis_pipeline_data_intermediate {
+ 	unsigned int *data;
+ 	unsigned long data_size;
+ 	struct antithesis_alloc_dev *dev;
+-	struct antithesis_alloc_agg *agg;
++	struct antithesis_alloc_obj *obj;
+ 	// struct antithesis_pipeline_diff {
+ 	// 	unsigned int sector;
+ 	// 	unsigned int *data;
