@@ -1,0 +1,294 @@
+commit 1cf8e241502a5e4901a08702d3488e61092cac60
+Author: Ashy5000 <ashydashy5000@gmail.com>
+Date:   Sat Aug 16 11:28:30 2025 -0700
+
+    Implements command queue
+
+diff --git a/drivers/gpu/drm/antithesis/Makefile b/drivers/gpu/drm/antithesis/Makefile
+index 385876088..393834920 100644
+--- a/drivers/gpu/drm/antithesis/Makefile
++++ b/drivers/gpu/drm/antithesis/Makefile
+@@ -3,6 +3,6 @@
+ # Makefile for the drm device driver.  This driver provides support for the
+ # Direct Rendering Infrastructure (DRI) in XFree86 4.1.0 and higher.
+ 
+-antithesis-gpu-y := antithesis_alloc.o antithesis_pipeline.o antithesis.o
++antithesis-gpu-y := antithesis_command.o antithesis_alloc.o antithesis_pipeline.o antithesis.o
+ 
+-obj-$(CONFIG_DRM_ANTITHESIS_GPU) += antithesis.o antithesis_alloc.o antithesis_pipeline.o
++obj-$(CONFIG_DRM_ANTITHESIS_GPU) += antithesis.o antithesis_command.o antithesis_alloc.o antithesis_pipeline.o
+diff --git a/drivers/gpu/drm/antithesis/antithesis.c b/drivers/gpu/drm/antithesis/antithesis.c
+index 4bb4d2a06..a6bb235ca 100644
+--- a/drivers/gpu/drm/antithesis/antithesis.c
++++ b/drivers/gpu/drm/antithesis/antithesis.c
+@@ -18,6 +18,7 @@
+ #include <drm/drm_simple_kms_helper.h>
+ #include <drm/drm_managed.h>
+ 
++#include "antithesis_command.h"
+ #include "antithesis_alloc.h"
+ #include "antithesis_pipeline.h"
+ 
+@@ -157,7 +158,6 @@ static int antithesis_probe(struct pci_dev *pdev,
+ 	ret = antithesis_pci_init(pdev, state);
+ 
+ 	struct antithesis_alloc_obj *obj = antithesis_alloc_obj_alloc(state->alloc_dev, 5);
+-	// antithesis_alloc_obj_alloc(state->alloc_dev, 5);
+ 	char *msg = kmalloc(sizeof(*msg) * 5, GFP_KERNEL);
+ 	msg[0] = 'H';
+ 	msg[1] = 'e';
+@@ -166,6 +166,8 @@ static int antithesis_probe(struct pci_dev *pdev,
+ 	msg[4] = 'o';
+ 	antithesis_alloc_obj_write(state->alloc_dev, obj, msg);
+ 	char *res = antithesis_alloc_obj_read(state->alloc_dev, obj);
++	antithesis_command_process(antithesis_command_queue_pop(state->alloc_dev->queue), state->alloc_dev->pdev);
++	antithesis_command_process(antithesis_command_queue_pop(state->alloc_dev->queue), state->alloc_dev->pdev);
+ 	for (unsigned int i = 0; i < obj->size; i++) {
+ 		printk(KERN_INFO "Char %ui: %c", i, res[i]);
+ 	}
+diff --git a/drivers/gpu/drm/antithesis/antithesis_alloc.c b/drivers/gpu/drm/antithesis/antithesis_alloc.c
+index a989af838..59b369815 100644
+--- a/drivers/gpu/drm/antithesis/antithesis_alloc.c
++++ b/drivers/gpu/drm/antithesis/antithesis_alloc.c
+@@ -1,17 +1,32 @@
++#include <linux/kthread.h>
+ #include "antithesis_alloc.h"
+-#include <linux/pci.h>
++#include "antithesis_command.h"
++
++#define ANTITHESIS_QUEUE_SIZE 5
+ 
+ struct antithesis_alloc_dev *antithesis_alloc_dev_alloc(struct pci_dev *pdev)
+ {
+ 	struct antithesis_alloc_dev *adev = kzalloc(sizeof(*adev), GFP_KERNEL);
+ 
+-	adev->pcimem = pci_iomap(pdev, 0, 0);
++	void __iomem *pcimem = pci_iomap(pdev, 0, 0);
++	struct antithesis_pci_dev *apdev = kzalloc(sizeof(*apdev), GFP_KERNEL);
++	apdev->pcimem = pcimem;
++	adev->pdev = apdev;
++	struct antithesis_command_queue *queue = kzalloc(sizeof(*queue), GFP_KERNEL);
++	queue->command_count = ANTITHESIS_QUEUE_SIZE;
++	queue->commands = kzalloc(sizeof(*queue->commands) * queue->command_count, GFP_KERNEL);
++	adev->queue = queue;
+ 	return adev;
+ }
+ 
+ void antithesis_alloc_dev_free(struct antithesis_alloc_dev *adev)
+ {
+ 	kfree(adev->objs);
++	for (unsigned int i = 0; i < adev->queue->command_count; i++) {
++		kfree(adev->queue->commands[i]);
++	}
++	kfree(adev->queue->commands);
++	kfree(adev->queue);
+ 	kfree(adev);
+ }
+ 
+@@ -37,29 +52,31 @@ antithesis_alloc_obj_alloc(struct antithesis_alloc_dev *adev, unsigned int size)
+ void antithesis_alloc_obj_write(struct antithesis_alloc_dev *adev,
+ 				struct antithesis_alloc_obj *obj, void *data)
+ {
+-	iowrite8(ANTITHESIS_COMMAND_WRITE, adev->pcimem + ANTITHESIS_REG_CMND);
+-	iowrite8(obj->addr, adev->pcimem + ANTITHESIS_REG_ADDR);
+-	iowrite8(obj->size, adev->pcimem + ANTITHESIS_REG_SIZE);
+-	wmb();
+-	for (unsigned int i = 0; i < obj->size; i++) {
+-		iowrite8(((char*)data)[i], adev->pcimem + ANTITHESIS_OFFSET_DATA + i);
+-	}
+-	wmb();
+-	iowrite8(1, adev->pcimem + ANTITHESIS_REG_APLY);
+-	mb();
+-	while (ioread8(adev->pcimem + ANTITHESIS_REG_APLY)) {}
++	struct antithesis_command *cmd = kmalloc(sizeof(*cmd), GFP_KERNEL);
++	cmd->buf = data;
++	cmd->buf_size = obj->size;
++	cmd->group = 0; // TODO: Group by frame
++	cmd->type = ANTITHESIS_COMMAND_WRITE;
++	cmd->arg_count = 1;
++	cmd->args = kmalloc(sizeof(*cmd->args) * cmd->arg_count, GFP_KERNEL);
++	cmd->args[0].buf_location = ANTITHESIS_REG_ADDR;
++	cmd->args[0].val = obj->addr;
++	antithesis_command_queue_push(adev->queue, cmd);
+ }
+ 
+ void *antithesis_alloc_obj_read(struct antithesis_alloc_dev *adev, struct antithesis_alloc_obj *obj)
+ {
+-	iowrite8(ANTITHESIS_COMMAND_READ, adev->pcimem + ANTITHESIS_REG_CMND);
+-	iowrite8(obj->addr, adev->pcimem + ANTITHESIS_REG_ADDR);
+-	iowrite8(obj->size, adev->pcimem + ANTITHESIS_REG_SIZE);
+-	mb();
+-	char *result = kmalloc(obj->size, GFP_KERNEL);
+-	for (unsigned int i = 0; i < obj->size; i++) {
+-		result[i] = ioread8(adev->pcimem + ANTITHESIS_OFFSET_DATA + i);
+-	}
++	void *result = kzalloc(obj->size, GFP_KERNEL);
++	struct antithesis_command *cmd = kzalloc(sizeof(*cmd), GFP_KERNEL);
++	cmd->buf = result;
++	cmd->buf_size = obj->size;
++	cmd->group = 0; // TODO: Group by frame
++	cmd->type = ANTITHESIS_COMMAND_READ;
++	cmd->arg_count = 1;
++	cmd->args = kmalloc(sizeof(*cmd->args) * cmd->arg_count, GFP_KERNEL);
++	cmd->args[0].buf_location = ANTITHESIS_REG_ADDR;
++	cmd->args[0].val = obj->addr;
++	antithesis_command_queue_push(adev->queue, cmd);
+ 	return result;
+ }
+ 
+diff --git a/drivers/gpu/drm/antithesis/antithesis_alloc.h b/drivers/gpu/drm/antithesis/antithesis_alloc.h
+index 858c699eb..d0c9e16ca 100644
+--- a/drivers/gpu/drm/antithesis/antithesis_alloc.h
++++ b/drivers/gpu/drm/antithesis/antithesis_alloc.h
+@@ -4,22 +4,12 @@
+ #include <linux/types.h>
+ #include <linux/pci.h>
+ 
+-#define ANTITHESIS_REG_CMND 0
+-#define ANTITHESIS_REG_APLY 1
+-#define ANTITHESIS_REG_ADDR 2
+-#define ANTITHESIS_REG_SIZE 3
+-#define ANTITHESIS_OFFSET_DATA 4
+-
+-enum AntithesisCommandType {
+-	ANTITHESIS_COMMAND_WRITE,
+-	ANTITHESIS_COMMAND_READ,
+-};
+-
+ struct antithesis_alloc_dev {
+-	void __iomem *pcimem;
+ 	struct antithesis_alloc_obj *objs;
+ 	unsigned int obj_count;
+ 	unsigned int end;
++	struct antithesis_command_queue *queue;
++	struct antithesis_pci_dev *pdev;
+ };
+ 
+ struct antithesis_alloc_obj {
+diff --git a/drivers/gpu/drm/antithesis/antithesis_command.c b/drivers/gpu/drm/antithesis/antithesis_command.c
+new file mode 100644
+index 000000000..e10dfabf7
+--- /dev/null
++++ b/drivers/gpu/drm/antithesis/antithesis_command.c
+@@ -0,0 +1,58 @@
++#include <linux/kthread.h>
++#include "antithesis_command.h"
++
++unsigned int antithesis_command_flags(enum antithesis_command_type type) {
++	switch (type) {
++		case ANTITHESIS_COMMAND_WRITE:
++			return ANTITHESIS_COMMAND_FLAG_EXECUTE | ANTITHESIS_COMMAND_FLAG_DATAWRITE;
++		case ANTITHESIS_COMMAND_READ:
++			return ANTITHESIS_COMMAND_FLAG_DATAREAD;
++		default:
++			return 0;
++	}
++}
++
++void antithesis_command_queue_push(struct antithesis_command_queue *queue, struct antithesis_command *command) {
++	while (queue->commands[queue->producer_pos] != NULL) {}
++	queue->commands[queue->producer_pos] = command;
++	queue->producer_pos = (queue->producer_pos + 1) % queue->command_count;
++}
++
++struct antithesis_command *antithesis_command_queue_pop(struct antithesis_command_queue *queue) {
++	while (queue->commands[queue->consumer_pos] == NULL) {}
++	struct antithesis_command *cmd = queue->commands[queue->consumer_pos];
++	queue->commands[queue->consumer_pos] = NULL;
++	queue->consumer_pos = (queue->consumer_pos + 1) % queue->command_count;
++	return cmd;
++}
++
++void antithesis_command_process(struct antithesis_command *cmd, struct antithesis_pci_dev *pdev) {
++	unsigned int flags = antithesis_command_flags(cmd->type);
++	iowrite8(cmd->type, pdev->pcimem + ANTITHESIS_REG_CMND);
++	for (unsigned int i = 0; i < cmd->arg_count; i++) {
++		iowrite8(cmd->args[i].val, pdev->pcimem + cmd->args[i].buf_location);
++	}
++	wmb();
++	if (flags & ANTITHESIS_COMMAND_FLAG_DATAWRITE) {
++		iowrite8(cmd->buf_size, pdev->pcimem + ANTITHESIS_REG_SIZE);
++		for (unsigned int i = 0; i < cmd->buf_size; i++) {
++			iowrite8(((char*)cmd->buf)[i], pdev->pcimem + ANTITHESIS_OFFSET_DATA + i);
++		}
++	}
++	wmb();
++	if (flags & ANTITHESIS_COMMAND_FLAG_EXECUTE) {
++		iowrite8(1, pdev->pcimem + ANTITHESIS_REG_APLY);
++	}
++	wmb();
++	if (flags & ANTITHESIS_COMMAND_FLAG_ASYNC) {
++		while (ioread8(pdev->pcimem + ANTITHESIS_REG_APLY)) {};
++	}
++	mb();
++	if (flags & ANTITHESIS_COMMAND_FLAG_DATAREAD) {
++		iowrite8(cmd->buf_size, pdev->pcimem + ANTITHESIS_REG_SIZE);
++		for (unsigned int i = 0; i < cmd->buf_size; i++) {
++			((char*)cmd->buf)[i] = ioread8(pdev->pcimem + ANTITHESIS_OFFSET_DATA + i);
++		}
++	}
++	kfree(cmd);
++}
+diff --git a/drivers/gpu/drm/antithesis/antithesis_command.h b/drivers/gpu/drm/antithesis/antithesis_command.h
+new file mode 100644
+index 000000000..0a33b7bb5
+--- /dev/null
++++ b/drivers/gpu/drm/antithesis/antithesis_command.h
+@@ -0,0 +1,40 @@
++#include "antithesis_pci.h"
++
++enum antithesis_command_type {
++	ANTITHESIS_COMMAND_WRITE = 0,
++	ANTITHESIS_COMMAND_READ = 1,
++};
++
++#define ANTITHESIS_COMMAND_FLAG_EXECUTE 1 << 0
++#define ANTITHESIS_COMMAND_FLAG_ASYNC 1 << 1
++#define ANTITHESIS_COMMAND_FLAG_DATAWRITE 1 << 2
++#define ANTITHESIS_COMMAND_FLAG_DATAREAD 1 << 3
++
++unsigned int antithesis_command_flags(enum antithesis_command_type type);
++
++struct antithesis_command_arg {
++	unsigned int buf_location;
++	char val;
++};
++
++struct antithesis_command {
++	enum antithesis_command_type type;
++	struct antithesis_command_arg *args;
++	unsigned int arg_count;
++	void *buf;
++	unsigned int buf_size;
++	unsigned int group;
++};
++
++// Uses a ring buffer-esque approach
++struct antithesis_command_queue {
++	struct antithesis_command **commands;
++	unsigned int command_count;
++	unsigned int producer_pos;
++	unsigned int consumer_pos;
++};
++
++void antithesis_command_queue_push(struct antithesis_command_queue *queue, struct antithesis_command *command);
++struct antithesis_command *antithesis_command_queue_pop(struct antithesis_command_queue *queue);
++
++void antithesis_command_process(struct antithesis_command *cmd, struct antithesis_pci_dev *pdev);
+diff --git a/drivers/gpu/drm/antithesis/antithesis_pci.h b/drivers/gpu/drm/antithesis/antithesis_pci.h
+new file mode 100644
+index 000000000..1463fe286
+--- /dev/null
++++ b/drivers/gpu/drm/antithesis/antithesis_pci.h
+@@ -0,0 +1,11 @@
++#include <linux/pci.h>
++
++#define ANTITHESIS_REG_CMND 0
++#define ANTITHESIS_REG_APLY 1
++#define ANTITHESIS_REG_ADDR 2
++#define ANTITHESIS_REG_SIZE 3
++#define ANTITHESIS_OFFSET_DATA 4
++
++struct antithesis_pci_dev {
++	void __iomem *pcimem;
++};
