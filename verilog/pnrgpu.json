@@ -19,7 +19,6 @@
         "placerHeap/parallelRefine": "0 ",
         "pack": "00000000000000000000000000000001",
         "synth": "00000000000000000000000000000001",
-        "frontend/top": "gpu",
         "placerHeap/timingWeight": "10 ",
         "placerHeap/criticalityExponent": "2",
         "placerHeap/beta": "0.900000",
@@ -32,20 +31,52 @@
         "auto_freq": "00000000000000000000000000000000",
         "slack_redist_iter": "00000000000000000000000000000000",
         "timing_driven": "00000000000000000000000000000001",
-        "target_freq": "12000000.000000",
-        "cst.filename": "wernher.cst",
-        "packer.partno": "GW2A-LV18PG256C8/I7",
-        "packer.chipdb": "GW2A-18C",
+        "target_freq": "27000000.000000",
+        "cst.filename": "tangnano9k.cst",
+        "packer.partno": "GW1NR-LV9QN88PC6/I5",
+        "packer.chipdb": "GW1N-9C",
         "packer.arch": "himbaechel/gowin"
       },
       "attributes": {
         "top": "00000000000000000000000000000001",
-        "src": "gpu.sv:34.1-64.10"
+        "src": "gpu.sv:3.1-42.10"
       },
       "ports": {
-        "led0": {
+        "uart_tx": {
           "direction": "output",
-          "bits": [ 9379 ]
+          "bits": [ 7600 ]
+        },
+        "uart_rx": {
+          "direction": "input",
+          "bits": [ 7599 ]
+        },
+        "led": {
+          "direction": "output",
+          "bits": [ 7656, 7654, 7652, 7650, 7648, 7646 ]
+        },
+        "clk": {
+          "direction": "input",
+          "bits": [ 7597 ]
+        },
+        "LCD_SYNC": {
+          "direction": "input",
+          "bits": [ 7596 ]
+        },
+        "LCD_R": {
+          "direction": "output",
+          "bits": [ 7639, 7637, 7635, 7633, 7631 ]
+        },
+        "LCD_G": {
+          "direction": "output",
+          "bits": [ 7628, 7626, 7624, 7622, 7620, 7618 ]
+        },
+        "LCD_CLK": {
+          "direction": "input",
+          "bits": [ 7593 ]
+        },
+        "LCD_B": {
+          "direction": "output",
+          "bits": [ 7614, 7612, 7610, 7608, 7605 ]
         }
       },
       "cells": {
@@ -56,13 +87,67 @@
           },
           "attributes": {
             "BEL_STRENGTH": "00000000000000000000000000000001",
-            "NEXTPNR_BEL": "X50Y27/GSR"
+            "NEXTPNR_BEL": "X0Y0/GSR"
           },
           "port_directions": {
             "GSRI": "input"
           },
           "connections": {
-            "GSRI": [ 9394 ]
+            "GSRI": [ 7720 ]
+          }
+        },
+        "uart_tx_OBUF_O": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "GND",
+            "NET_O": "NET",
+            "NET_BOTTOM_IO_PORT_A": "GND",
+            "NET_BOTTOM_IO_PORT_B": "GND"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X1Y28/IOBA",
+            "src": "gpu.sv:6.12-6.19",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "BOTTOM_IO_PORT_B": "input",
+            "BOTTOM_IO_PORT_A": "input",
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "BOTTOM_IO_PORT_B": [ 7721 ],
+            "BOTTOM_IO_PORT_A": [ 7721 ],
+            "O": [ 7600 ],
+            "I": [ 7721 ]
+          }
+        },
+        "uart_rx_IBUF_I": {
+          "hide_name": 0,
+          "type": "IBUF",
+          "parameters": {
+            "NET_I": "NET",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X1Y28/IOBB",
+            "src": "gpu.sv:5.11-5.18",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7659 ],
+            "I": [ 7599 ]
           }
         },
         "$PACKER_VCC_DRV": {
@@ -78,7 +163,200 @@
             "V": "output"
           },
           "connections": {
-            "V": [ 9394 ]
+            "V": [ 7720 ]
+          }
+        },
+        "led_OBUF_O_5": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "GND",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X0Y14/IOBA",
+            "src": "gpu.sv:7.22-7.25",
+            "&IO_TYPE=LVCMOS18": "00000000000000000000000000000001",
+            "&PULL_MODE=NONE": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7656 ],
+            "I": [ 7721 ]
+          }
+        },
+        "led_OBUF_O_4": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "GND",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X0Y15/IOBB",
+            "src": "gpu.sv:7.22-7.25",
+            "&IO_TYPE=LVCMOS18": "00000000000000000000000000000001",
+            "&PULL_MODE=NONE": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7654 ],
+            "I": [ 7721 ]
+          }
+        },
+        "led_OBUF_O_3": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "GND",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X0Y20/IOBB",
+            "src": "gpu.sv:7.22-7.25",
+            "&IO_TYPE=LVCMOS18": "00000000000000000000000000000001",
+            "&PULL_MODE=NONE": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7652 ],
+            "I": [ 7721 ]
+          }
+        },
+        "led_OBUF_O_2": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "GND",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X0Y21/IOBB",
+            "src": "gpu.sv:7.22-7.25",
+            "&IO_TYPE=LVCMOS18": "00000000000000000000000000000001",
+            "&PULL_MODE=NONE": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7650 ],
+            "I": [ 7721 ]
+          }
+        },
+        "led_OBUF_O_1": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "GND",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X0Y24/IOBB",
+            "src": "gpu.sv:7.22-7.25",
+            "&IO_TYPE=LVCMOS18": "00000000000000000000000000000001",
+            "&PULL_MODE=NONE": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7648 ],
+            "I": [ 7721 ]
+          }
+        },
+        "led_OBUF_O": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "GND",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X0Y25/IOBB",
+            "src": "gpu.sv:7.22-7.25",
+            "&IO_TYPE=LVCMOS18": "00000000000000000000000000000001",
+            "&PULL_MODE=NONE": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7646 ],
+            "I": [ 7721 ]
+          }
+        },
+        "clk_IBUF_I": {
+          "hide_name": 0,
+          "type": "IBUF",
+          "parameters": {
+            "NET_I": "NET",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X46Y16/IOBA",
+            "src": "gpu.sv:4.11-4.14",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7644 ],
+            "I": [ 7597 ]
+          }
+        },
+        "LCD_SYNC_IBUF_I": {
+          "hide_name": 0,
+          "type": "IBUF",
+          "parameters": {
+            "NET_I": "NET",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X22Y28/IOBB",
+            "src": "gpu.sv:9.11-9.19",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "&DRIVE=24": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7642 ],
+            "I": [ 7596 ]
           }
         },
         "$PACKER_GND_DRV": {
@@ -87,17 +365,17 @@
           "parameters": {
           },
           "attributes": {
-            "BEL_STRENGTH": "00000000000000000000000000000010",
+            "BEL_STRENGTH": "00000000000000000000000000000001",
             "NEXTPNR_BEL": "X0Y0/GND"
           },
           "port_directions": {
             "G": "output"
           },
           "connections": {
-            "G": [ 9395 ]
+            "G": [ 7721 ]
           }
         },
-        "led0_OBUF_O": {
+        "LCD_R_OBUF_O_4": {
           "hide_name": 0,
           "type": "OBUF",
           "parameters": {
@@ -106,8 +384,11 @@
           },
           "attributes": {
             "BEL_STRENGTH": "00000000000000000000000000000101",
-            "NEXTPNR_BEL": "X53Y0/IOBA",
-            "src": "gpu.sv:38.12-38.16",
+            "NEXTPNR_BEL": "X37Y0/IOBA",
+            "src": "gpu.sv:10.24-10.29",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "&DRIVE=24": "00000000000000000000000000000001",
             "keep": "00000000000000000000000000000001"
           },
           "port_directions": {
@@ -115,32 +396,678 @@
             "I": "input"
           },
           "connections": {
-            "O": [ 9379 ],
-            "I": [ 9394 ]
+            "O": [ 7639 ],
+            "I": [ 7720 ]
+          }
+        },
+        "LCD_R_OBUF_O_3": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "VCC",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X37Y0/IOBB",
+            "src": "gpu.sv:10.24-10.29",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "&DRIVE=24": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7637 ],
+            "I": [ 7720 ]
+          }
+        },
+        "LCD_R_OBUF_O_2": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "VCC",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X38Y0/IOBA",
+            "src": "gpu.sv:10.24-10.29",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "&DRIVE=24": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7635 ],
+            "I": [ 7720 ]
+          }
+        },
+        "LCD_R_OBUF_O_1": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "VCC",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X38Y0/IOBB",
+            "src": "gpu.sv:10.24-10.29",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "&DRIVE=24": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7633 ],
+            "I": [ 7720 ]
+          }
+        },
+        "LCD_R_OBUF_O": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "VCC",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X40Y0/IOBA",
+            "src": "gpu.sv:10.24-10.29",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "&DRIVE=24": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7631 ],
+            "I": [ 7720 ]
+          }
+        },
+        "LCD_G_OBUF_O_5": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "GND",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X40Y0/IOBB",
+            "src": "gpu.sv:11.24-11.29",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "&DRIVE=24": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7628 ],
+            "I": [ 7721 ]
+          }
+        },
+        "LCD_G_OBUF_O_4": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "GND",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X41Y0/IOBA",
+            "src": "gpu.sv:11.24-11.29",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "&DRIVE=24": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7626 ],
+            "I": [ 7721 ]
+          }
+        },
+        "LCD_G_OBUF_O_3": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "GND",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X41Y0/IOBB",
+            "src": "gpu.sv:11.24-11.29",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "&DRIVE=24": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7624 ],
+            "I": [ 7721 ]
+          }
+        },
+        "LCD_G_OBUF_O_2": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "GND",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X46Y12/IOBA",
+            "src": "gpu.sv:11.24-11.29",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "&DRIVE=24": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7622 ],
+            "I": [ 7721 ]
+          }
+        },
+        "LCD_G_OBUF_O_1": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "GND",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X46Y13/IOBA",
+            "src": "gpu.sv:11.24-11.29",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "&DRIVE=24": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7620 ],
+            "I": [ 7721 ]
+          }
+        },
+        "LCD_G_OBUF_O": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "GND",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X46Y13/IOBB",
+            "src": "gpu.sv:11.24-11.29",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "&DRIVE=24": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7618 ],
+            "I": [ 7721 ]
+          }
+        },
+        "LCD_CLK_IBUF_I": {
+          "hide_name": 0,
+          "type": "IBUF",
+          "parameters": {
+            "NET_I": "NET",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X28Y28/IOBA",
+            "src": "gpu.sv:8.11-8.18",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "&DRIVE=24": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7616 ],
+            "I": [ 7593 ]
+          }
+        },
+        "LCD_B_OBUF_O_4": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "GND",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X46Y14/IOBA",
+            "src": "gpu.sv:12.24-12.29",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "&DRIVE=24": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7614 ],
+            "I": [ 7721 ]
+          }
+        },
+        "LCD_B_OBUF_O_3": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "GND",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X46Y14/IOBB",
+            "src": "gpu.sv:12.24-12.29",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "&DRIVE=24": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7612 ],
+            "I": [ 7721 ]
+          }
+        },
+        "LCD_B_OBUF_O_2": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "GND",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X46Y16/IOBB",
+            "src": "gpu.sv:12.24-12.29",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "&DRIVE=24": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7610 ],
+            "I": [ 7721 ]
+          }
+        },
+        "LCD_B_OBUF_O_1": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "GND",
+            "NET_O": "NET"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X40Y28/IOBB",
+            "src": "gpu.sv:12.24-12.29",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "&DRIVE=24": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "O": [ 7608 ],
+            "I": [ 7721 ]
+          }
+        },
+        "LCD_B_OBUF_O": {
+          "hide_name": 0,
+          "type": "OBUF",
+          "parameters": {
+            "NET_I": "GND",
+            "NET_O": "NET",
+            "NET_BOTTOM_IO_PORT_A": "GND",
+            "NET_BOTTOM_IO_PORT_B": "GND"
+          },
+          "attributes": {
+            "BEL_STRENGTH": "00000000000000000000000000000101",
+            "NEXTPNR_BEL": "X40Y28/IOBA",
+            "src": "gpu.sv:12.24-12.29",
+            "&IO_TYPE=LVCMOS33": "00000000000000000000000000000001",
+            "&PULL_MODE=UP": "00000000000000000000000000000001",
+            "&DRIVE=24": "00000000000000000000000000000001",
+            "keep": "00000000000000000000000000000001"
+          },
+          "port_directions": {
+            "BOTTOM_IO_PORT_B": "input",
+            "BOTTOM_IO_PORT_A": "input",
+            "O": "output",
+            "I": "input"
+          },
+          "connections": {
+            "BOTTOM_IO_PORT_B": [ 7721 ],
+            "BOTTOM_IO_PORT_A": [ 7721 ],
+            "O": [ 7605 ],
+            "I": [ 7721 ]
           }
         }
       },
       "netnames": {
-        "$PACKER_VCC": {
-          "hide_name": 1,
-          "bits": [ 9394 ] ,
-          "attributes": {
-            "ROUTING": "X53Y0/N200;X53Y0/N200/VCC;1;X53Y0/A0;X53Y0/A0/N200;1;X0Y0/VCC;;1;X50Y27/E230;X50Y27/E230/VCC;1;X50Y27/C4;X50Y27/C4/E230;1"
-          }
-        },
-        "led0": {
+        "uart_tx": {
           "hide_name": 0,
-          "bits": [ 9379 ] ,
+          "bits": [ 7600 ] ,
           "attributes": {
             "ROUTING": " ",
-            "src": "gpu.sv:38.12-38.16"
+            "src": "gpu.sv:6.12-6.19"
+          }
+        },
+        "uart_rx_IBUF_I_O": {
+          "hide_name": 0,
+          "bits": [ 7659 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "unused_bits": "0 "
+          }
+        },
+        "uart_rx": {
+          "hide_name": 0,
+          "bits": [ 7599 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:5.11-5.18"
+          }
+        },
+        "led[0]": {
+          "hide_name": 0,
+          "bits": [ 7656 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:7.22-7.25"
+          }
+        },
+        "led[1]": {
+          "hide_name": 0,
+          "bits": [ 7654 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:7.22-7.25"
+          }
+        },
+        "led[2]": {
+          "hide_name": 0,
+          "bits": [ 7652 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:7.22-7.25"
+          }
+        },
+        "led[3]": {
+          "hide_name": 0,
+          "bits": [ 7650 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:7.22-7.25"
+          }
+        },
+        "led[4]": {
+          "hide_name": 0,
+          "bits": [ 7648 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:7.22-7.25"
+          }
+        },
+        "led[5]": {
+          "hide_name": 0,
+          "bits": [ 7646 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:7.22-7.25"
+          }
+        },
+        "clk_IBUF_I_O": {
+          "hide_name": 0,
+          "bits": [ 7644 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "unused_bits": "0 "
+          }
+        },
+        "clk": {
+          "hide_name": 0,
+          "bits": [ 7597 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:4.11-4.14"
+          }
+        },
+        "LCD_SYNC_IBUF_I_O": {
+          "hide_name": 0,
+          "bits": [ 7642 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "unused_bits": "0 "
+          }
+        },
+        "LCD_SYNC": {
+          "hide_name": 0,
+          "bits": [ 7596 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:9.11-9.19"
+          }
+        },
+        "LCD_R[0]": {
+          "hide_name": 0,
+          "bits": [ 7639 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:10.24-10.29"
+          }
+        },
+        "LCD_R[1]": {
+          "hide_name": 0,
+          "bits": [ 7637 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:10.24-10.29"
+          }
+        },
+        "LCD_R[2]": {
+          "hide_name": 0,
+          "bits": [ 7635 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:10.24-10.29"
+          }
+        },
+        "LCD_R[3]": {
+          "hide_name": 0,
+          "bits": [ 7633 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:10.24-10.29"
+          }
+        },
+        "LCD_R[4]": {
+          "hide_name": 0,
+          "bits": [ 7631 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:10.24-10.29"
           }
         },
         "$PACKER_GND": {
           "hide_name": 1,
-          "bits": [ 9395 ] ,
+          "bits": [ 7721 ] ,
           "attributes": {
-            "ROUTING": " "
+            "ROUTING": "X0Y25/S260;X0Y25/S260/VSS;1;X0Y25/D1;X0Y25/D1/S260;1;X0Y14/E210;X0Y14/E210/VSS;1;X0Y14/A0;X0Y14/A0/E210;1;X1Y28/S270;X1Y28/S270/VSS;1;X1Y28/A0;X1Y28/A0/N271;1;X40Y0/S260;X40Y0/S260/VSS;1;X40Y0/D1;X40Y0/D1/S260;1;X46Y12/E250;X46Y12/E250/VSS;1;X46Y12/A0;X46Y12/A0/W251;1;X1Y28/W260;X1Y28/W260/VSS;1;X1Y28/D6;X1Y28/D6/W260;1;X46Y13/E270;X46Y13/E270/VSS;1;X46Y13/D1;X46Y13/D1/E270;1;X0Y20/S260;X0Y20/S260/VSS;1;X0Y20/D1;X0Y20/D1/S260;1;X40Y28/E270;X40Y28/E270/VSS;1;X40Y28/D1;X40Y28/D1/E270;1;X0Y21/S260;X0Y21/S260/VSS;1;X0Y21/D1;X0Y21/D1/S260;1;X41Y0/N250;X41Y0/N250/VSS;1;X41Y0/A0;X41Y0/A0/S251;1;X46Y16/E270;X46Y16/E270/VSS;1;X46Y16/D1;X46Y16/D1/E270;1;X1Y28/S230;X1Y28/S230/VSS;1;X1Y28/C6;X1Y28/C6/S230;1;X46Y14/A0;X46Y14/A0/W271;1;X46Y13/E250;X46Y13/E250/VSS;1;X46Y13/A0;X46Y13/A0/W251;1;X46Y14/E270;X46Y14/E270/VSS;1;X46Y14/D1;X46Y14/D1/E270;1;X0Y15/S260;X0Y15/S260/VSS;1;X0Y15/D1;X0Y15/D1/S260;1;X41Y0/E270;X41Y0/E270/VSS;1;X41Y0/D1;X41Y0/D1/E270;1;X40Y28/N270;X40Y28/N270/VSS;1;X40Y28/D6;X40Y28/D6/N270;1;X0Y24/E270;X0Y24/E270/VSS;1;X0Y24/D1;X0Y24/D1/E270;1;X40Y28/S270;X40Y28/S270/VSS;1;X40Y28/A0;X40Y28/A0/N271;1;X0Y0/VSS;;1;X40Y28/S230;X40Y28/S230/VSS;1;X40Y28/C6;X40Y28/C6/S230;1"
+          }
+        },
+        "LCD_G[0]": {
+          "hide_name": 0,
+          "bits": [ 7628 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:11.24-11.29"
+          }
+        },
+        "LCD_G[1]": {
+          "hide_name": 0,
+          "bits": [ 7626 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:11.24-11.29"
+          }
+        },
+        "LCD_G[2]": {
+          "hide_name": 0,
+          "bits": [ 7624 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:11.24-11.29"
+          }
+        },
+        "LCD_G[3]": {
+          "hide_name": 0,
+          "bits": [ 7622 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:11.24-11.29"
+          }
+        },
+        "LCD_G[4]": {
+          "hide_name": 0,
+          "bits": [ 7620 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:11.24-11.29"
+          }
+        },
+        "LCD_G[5]": {
+          "hide_name": 0,
+          "bits": [ 7618 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:11.24-11.29"
+          }
+        },
+        "LCD_CLK_IBUF_I_O": {
+          "hide_name": 0,
+          "bits": [ 7616 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "unused_bits": "0 "
+          }
+        },
+        "LCD_CLK": {
+          "hide_name": 0,
+          "bits": [ 7593 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:8.11-8.18"
+          }
+        },
+        "LCD_B[0]": {
+          "hide_name": 0,
+          "bits": [ 7614 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:12.24-12.29"
+          }
+        },
+        "LCD_B[1]": {
+          "hide_name": 0,
+          "bits": [ 7612 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:12.24-12.29"
+          }
+        },
+        "LCD_B[2]": {
+          "hide_name": 0,
+          "bits": [ 7610 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:12.24-12.29"
+          }
+        },
+        "LCD_B[3]": {
+          "hide_name": 0,
+          "bits": [ 7608 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:12.24-12.29"
+          }
+        },
+        "LCD_B[4]": {
+          "hide_name": 0,
+          "bits": [ 7605 ] ,
+          "attributes": {
+            "ROUTING": " ",
+            "src": "gpu.sv:12.24-12.29"
+          }
+        },
+        "$PACKER_VCC": {
+          "hide_name": 1,
+          "bits": [ 7720 ] ,
+          "attributes": {
+            "ROUTING": "X37Y0/N200;X37Y0/N200/VCC;1;X37Y0/A0;X37Y0/A0/N200;1;X0Y0/N220;X0Y0/N220/VCC;1;X0Y0/C4;X0Y0/C4/S221;1;X38Y0/N200;X38Y0/N200/VCC;1;X38Y0/D1;X38Y0/D1/S201;1;X38Y0/N270;X38Y0/N270/VCC;1;X38Y0/A0;X38Y0/A0/S271;1;X37Y0/S260;X37Y0/S260/VCC;1;X37Y0/D1;X37Y0/D1/S260;1;X0Y0/VCC;;1;X40Y0/N200;X40Y0/N200/VCC;1;X40Y0/A0;X40Y0/A0/N200;1"
           }
         }
       }
