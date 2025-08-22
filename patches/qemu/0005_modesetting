@@ -1,0 +1,185 @@
+commit 5fb1cb4f195560ce2b72dade71ff378f19691944
+Author: Ashy5000 <ashydashy5000@gmail.com>
+Date:   Fri Aug 22 00:00:47 2025 -0700
+
+    Implements modesetting
+
+diff --git a/hw/misc/antithesis.c b/hw/misc/antithesis.c
+index 4a99905..9eec86b 100644
+--- a/hw/misc/antithesis.c
++++ b/hw/misc/antithesis.c
+@@ -1,5 +1,6 @@
+ #include <stdio.h>
+ #include "qemu/osdep.h"
++#include "ui/console.h"
+ #include "hw/pci/pci_device.h"
+ 
+ #define TYPE_PCI_ANTITHESIS "antithesis"
+@@ -8,11 +9,14 @@
+ #define ANTITHESIS_REG_APLY 1
+ #define ANTITHESIS_REG_ADDR 2
+ #define ANTITHESIS_REG_SIZE 3
+-#define ANTITHESIS_OFFSET_DATA 4
++#define ANTITHESIS_REG_WIDTH 4
++#define ANTITHESIS_REG_HEIGHT 5
++#define ANTITHESIS_OFFSET_DATA 6
+ 
+ typedef enum AntithesisCommandType {
+-	ANTITHESIS_COMMAND_WRITE,
+-    ANTITHESIS_COMMAND_READ,
++    ANTITHESIS_COMMAND_WRITE = 0,
++    ANTITHESIS_COMMAND_READ = 1,
++    ANTITHESIS_COMMAND_OUTPUT = 2,
+ } AntithesisCommandType;
+ 
+ typedef struct AntithesisCommandWritePayload {
+@@ -25,12 +29,20 @@ typedef struct AntithesisCommandReadPayload {
+     unsigned int addr;
+ } AntithesisCommandReadPayload;
+ 
++typedef struct AntithesisCommandOutputPayload {
++    unsigned int width;
++    unsigned int height;
++    unsigned int addr;
++} AntithesisCommandOutputPayload;
++
+ AntithesisCommandWritePayload *payload_write;
+ AntithesisCommandReadPayload *payload_read;
++AntithesisCommandOutputPayload *payload_output;
+ 
+ typedef union AntithesisCommandPayload {
+     AntithesisCommandWritePayload *write;
+     AntithesisCommandReadPayload *read;
++    AntithesisCommandOutputPayload *output;
+ } AntithesisCommandPayload;
+ 
+ typedef struct AntithesisCommand {
+@@ -40,6 +52,12 @@ typedef struct AntithesisCommand {
+ 
+ FILE *logfile;
+ 
++typedef struct AntithesisOutput {
++    unsigned int width;
++    unsigned int height;
++    unsigned int addr;
++} AntithesisOutput;
++
+ typedef struct AntithesisState {
+     PCIDevice parent_obj;
+     MemoryRegion mmio;
+@@ -49,8 +67,21 @@ typedef struct AntithesisState {
+ 
+     uint8_t *vram;
+     unsigned int vram_size;
++
++    AntithesisOutput output;
++
++    QemuConsole *console;
+ } AntithesisState;
+ 
++static void antithesis_write_callback(AntithesisState *state, unsigned int addr)
++{
++    if (addr >= state->output.addr && addr < state->output.addr + state->output.width * state->output.height) {
++        DisplaySurface *ds = qemu_create_displaysurface_from(state->output.width, state->output.height, PIXMAN_a8r8g8b8, state->output.width * 4, state->vram + addr);
++        dpy_gfx_replace_surface(state->console, ds);
++        dpy_gfx_update_full(state->console);
++    }
++}
++
+ static uint64_t antithesis_read(void *opaque, hwaddr addr, unsigned size)
+ {
+     AntithesisState *state = opaque;
+@@ -79,6 +110,12 @@ static void antithesis_command_execute(AntithesisState *state, AntithesisCommand
+                 state->vram_size = end;
+             }
+             memcpy(state->vram + payload->write->addr, payload->write->buf, payload->write->size);
++            antithesis_write_callback(state, payload->write->addr);
++            break;
++        case ANTITHESIS_COMMAND_OUTPUT:
++            state->output.addr = state->cmd->payload->output->addr;
++            state->output.width = state->cmd->payload->output->width;
++            state->output.height = state->cmd->payload->output->height;
+             break;
+         case ANTITHESIS_COMMAND_READ:
+             fprintf(logfile, "WARN: command does not need explicit execution. (code: %d\n", cmd->type);
+@@ -93,6 +130,8 @@ static void antithesis_command_execute(AntithesisState *state, AntithesisCommand
+ 
+ static void antithesis_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
+ {
++    fprintf(logfile, "Write to BAR.\n");
++    fflush(logfile);
+     AntithesisState *state = opaque;
+ 
+     switch (addr) {
+@@ -101,6 +140,9 @@ static void antithesis_write(void *opaque, hwaddr addr, uint64_t val, unsigned s
+                 break;
+             }
+ 
++            fprintf(logfile, "Command: %li\n", val);
++            fflush(logfile);
++
+             switch (val) {
+                 case ANTITHESIS_COMMAND_WRITE:
+                     state->cmd->payload->write = payload_write;
+@@ -108,8 +150,11 @@ static void antithesis_write(void *opaque, hwaddr addr, uint64_t val, unsigned s
+                 case ANTITHESIS_COMMAND_READ:
+                     state->cmd->payload->read = payload_read;
+                     break;
++                case ANTITHESIS_COMMAND_OUTPUT:
++                    state->cmd->payload->output = payload_output;
++                    break;
+                 default:
+-                    fprintf(logfile, "Invalid command! (code: %d\n)", state->cmd->type);
++                    fprintf(logfile, "Invalid command! (code: %lu\n)", val);
+                     fflush(logfile);
+                     break;
+             }
+@@ -126,6 +171,8 @@ static void antithesis_write(void *opaque, hwaddr addr, uint64_t val, unsigned s
+                 state->cmd->payload->write->addr = val;
+             } else if (state->cmd->type == ANTITHESIS_COMMAND_READ) {
+                 state->cmd->payload->read->addr = val;
++            } else if (state->cmd->type == ANTITHESIS_COMMAND_OUTPUT) {
++                state->cmd->payload->output->addr = val;
+             }
+             break;
+         case ANTITHESIS_REG_SIZE:
+@@ -134,6 +181,16 @@ static void antithesis_write(void *opaque, hwaddr addr, uint64_t val, unsigned s
+                 state->cmd->payload->write->buf = realloc(state->cmd->payload->write->buf, val);
+             }
+             break;
++        case ANTITHESIS_REG_WIDTH:
++            if (state->cmd->type == ANTITHESIS_COMMAND_OUTPUT) {
++                state->cmd->payload->output->width = val;
++            }
++            break;
++        case ANTITHESIS_REG_HEIGHT:
++            if (state->cmd->type == ANTITHESIS_COMMAND_OUTPUT) {
++                state->cmd->payload->output->height = val;
++            }
++            break;
+         default:
+             if (state->cmd->type == ANTITHESIS_COMMAND_WRITE) {
+                 state->cmd->payload->write->buf[addr - ANTITHESIS_OFFSET_DATA] = val;
+@@ -151,6 +208,7 @@ static const MemoryRegionOps antithesis_ops = {
+     },
+ };
+ 
++static const GraphicHwOps antithesis_gpu_ops = {0};
+ 
+ static void antithesis_init(PCIDevice *pdev, Error **err)
+ {
+@@ -159,11 +217,13 @@ static void antithesis_init(PCIDevice *pdev, Error **err)
+     state->cmd->payload = malloc(sizeof(*state->cmd->payload));
+     payload_write = malloc(sizeof(*payload_write));
+     payload_read = malloc(sizeof(*payload_read));
++    payload_output = malloc(sizeof(*payload_output));
+     uint8_t *pci_conf = pdev->config;
+     pci_conf[PCI_INTERRUPT_PIN] = 0;
+-    memory_region_init_io(&state->mmio, OBJECT(state), &antithesis_ops, state, "antithesis-mmio", 32);
++    memory_region_init_io(&state->mmio, OBJECT(state), &antithesis_ops, state, "antithesis-mmio", 128);
+     pci_register_bar(pdev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY, &state->mmio);
+     logfile = fopen("/home/ashy5000/dev/gpu/antithesis/logfile.txt", "w");
++    state->console = graphic_console_init(DEVICE(pdev), 0, &antithesis_gpu_ops, state);
+ }
+ 
+ static void antithesis_exit(PCIDevice *pdev)

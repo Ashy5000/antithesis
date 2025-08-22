@@ -1,8 +1,10 @@
 ../deps/linux/arch/x86_64/boot/bzImage: ../deps/linux/drivers/gpu/drm/antithesis
-	cd ../deps/linux; make -j $(nproc)
+	# cd ../deps/linux; make -j $(nproc)
+	cd ../deps/linux; make -j 10
 
 ../deps/qemu/build/qemu-system-x86_64: ../deps/qemu/hw/misc/antithesis.c ../deps/qemu/build/Makefile
-	cd ../deps/qemu/build; make -j $(nproc)
+	# cd ../deps/qemu/build; make -j $(nproc)
+	cd ../deps/qemu/build; make -j 10
 
 ../deps/qemu/build/Makefile:
 	cd ../deps/qemu; rm -rf build; ./configure
@@ -26,7 +28,7 @@ build: ../deps/linux/arch/x86_64/boot/bzImage ../deps/qemu/build/qemu-system-x86
 
 vm: build
 	echo "Connect GDB to localhost:1234 and use the 'c' command to start up the system."
-	cd ../deps; ./qemu/build/qemu-system-x86_64 -kernel linux/arch/x86_64/boot/bzImage -initrd ./initramfs.cpio -append "console=ttyS0 nokaslr" -m 1024 -s -S -device antithesis -nographic
+	cd ../deps; ./qemu/build/qemu-system-x86_64 -kernel linux/arch/x86_64/boot/bzImage -initrd ./initramfs.cpio -append "console=ttyS0 nokaslr" -m 1024 -s -S -device antithesis -vga none -serial stdio
 
 synthesize: build
 	cd verilog; openFPGALoader -b tangnano9k pack.fs || { echo "openFPGALoader failed!"; exit 1; }
