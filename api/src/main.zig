@@ -79,7 +79,7 @@ pub const AntithesisDevice = struct {
         const buf = try allocator.alloc(u8, 4);
         defer allocator.free(buf);
         try device.execute(command, buf, allocator);
-        const id = (@as(u32, buf[0]) << 24) | (@as(u32, buf[1]) << 16) | (@as(u32, buf[2]) << 8) | @as(u32, buf[3]);
+        const id = (@as(u32, buf[3]) << 24) | (@as(u32, buf[2]) << 16) | (@as(u32, buf[1]) << 8) | @as(u32, buf[0]);
         return AntithesisObject { .id = id, .size = size };
     }
 

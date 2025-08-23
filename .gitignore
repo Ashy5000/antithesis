@@ -6,3 +6,4 @@ verilog/pack.fs
 initramfs
 initramfs.cpio.gz
 api/.zig-cache
+logfile.txt

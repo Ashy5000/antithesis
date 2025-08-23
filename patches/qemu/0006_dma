@@ -1,0 +1,215 @@
+commit 691e9c76f819768e3fcc7e33e8ba8955b10b0749
+Author: Ashy5000 <ashydashy5000@gmail.com>
+Date:   Sat Aug 23 15:16:17 2025 -0700
+
+    Implements DMA
+
+diff --git a/hw/misc/antithesis.c b/hw/misc/antithesis.c
+index 9eec86b..226cb0a 100644
+--- a/hw/misc/antithesis.c
++++ b/hw/misc/antithesis.c
+@@ -8,10 +8,10 @@
+ #define ANTITHESIS_REG_CMND 0
+ #define ANTITHESIS_REG_APLY 1
+ #define ANTITHESIS_REG_ADDR 2
+-#define ANTITHESIS_REG_SIZE 3
+-#define ANTITHESIS_REG_WIDTH 4
+-#define ANTITHESIS_REG_HEIGHT 5
+-#define ANTITHESIS_OFFSET_DATA 6
++#define ANTITHESIS_REG_SIZE 10
++#define ANTITHESIS_REG_WIDTH 18
++#define ANTITHESIS_REG_HEIGHT 26
++#define ANTITHESIS_REG_DMA 34
+ 
+ typedef enum AntithesisCommandType {
+     ANTITHESIS_COMMAND_WRITE = 0,
+@@ -21,7 +21,6 @@ typedef enum AntithesisCommandType {
+ 
+ typedef struct AntithesisCommandWritePayload {
+     unsigned int addr;
+-    uint8_t *buf;
+     unsigned int size;
+ } AntithesisCommandWritePayload;
+ 
+@@ -32,7 +31,7 @@ typedef struct AntithesisCommandReadPayload {
+ typedef struct AntithesisCommandOutputPayload {
+     unsigned int width;
+     unsigned int height;
+-    unsigned int addr;
++unsigned int addr;
+ } AntithesisCommandOutputPayload;
+ 
+ AntithesisCommandWritePayload *payload_write;
+@@ -58,9 +57,17 @@ typedef struct AntithesisOutput {
+     unsigned int addr;
+ } AntithesisOutput;
+ 
++typedef struct AntithesisDMASegment {
++    uint8_t *mem;
++    uint64_t size;
++} AntithesisDMASegment;
++
+ typedef struct AntithesisState {
+     PCIDevice parent_obj;
+     MemoryRegion mmio;
++    uint64_t dma_addr;
++    AntithesisDMASegment *dma_segs;
++    unsigned int dma_seg_count;
+ 
+     AntithesisCommand *cmd;
+     bool blocking;
+@@ -89,30 +96,56 @@ static uint64_t antithesis_read(void *opaque, hwaddr addr, unsigned size)
+         case ANTITHESIS_REG_APLY:
+             return state->blocking;
+         default:
+-            if (state->cmd->type == ANTITHESIS_COMMAND_READ) {
+-                return state->vram[addr - ANTITHESIS_OFFSET_DATA + state->cmd->payload->read->addr];
+-            }
++            // if (state->cmd->type == ANTITHESIS_COMMAND_READ) {
++            //     return state->vram[addr - ANTITHESIS_OFFSET_DATA + state->cmd->payload->read->addr];
++            // }
+             fprintf(logfile, "Register %ld is not readable.\n", addr);
+             fflush(logfile);
+             return 0;
+     }
+ }
+ 
++static void antithesis_do_dma(AntithesisState *state, uint64_t size) {
++    uint64_t addr = state->dma_addr;
++    state->dma_seg_count = 0;
++
++    while (addr < state->dma_addr + size) {
++        uint64_t len = size - (addr - state->dma_addr); // Try to map as much memory as possible
++        uint8_t *map = dma_memory_map(&address_space_memory, addr, &len, DMA_DIRECTION_TO_DEVICE, MEMTXATTRS_UNSPECIFIED);
++
++        addr += len;
++
++        state->dma_segs = realloc(state->dma_segs, ++state->dma_seg_count);
++        state->dma_segs[state->dma_seg_count - 1].mem = map;
++        state->dma_segs[state->dma_seg_count - 1].size = len;
++    }
++}
++
++static void antithesis_dma_memcpy_from(AntithesisState *state, uint8_t *dest) {
++    uint64_t offset = 0;
++    for (unsigned int i = 0; i < state->dma_seg_count; i++) {
++        memcpy(dest + offset, state->dma_segs[i].mem, state->dma_segs[i].size);
++        offset += state->dma_segs[i].size;
++    }
++}
++
+ static void antithesis_command_execute(AntithesisState *state, AntithesisCommand *cmd) {
+     AntithesisCommandPayload *payload = cmd->payload;
+     state->blocking = true;
+     switch (cmd->type) {
+-        case ANTITHESIS_COMMAND_WRITE:
+-            ; // clang sucks
++        case ANTITHESIS_COMMAND_WRITE:; // clang sucks
+             unsigned int end = payload->write->addr + payload->write->size;
+             if (end > state->vram_size) {
+                 state->vram = realloc(state->vram, end);
+                 state->vram_size = end;
+             }
+-            memcpy(state->vram + payload->write->addr, payload->write->buf, payload->write->size);
++
++            antithesis_do_dma(state, payload->write->size);
++            antithesis_dma_memcpy_from(state, state->vram + payload->write->addr);
+             antithesis_write_callback(state, payload->write->addr);
+             break;
+         case ANTITHESIS_COMMAND_OUTPUT:
++            fflush(logfile);
+             state->output.addr = state->cmd->payload->output->addr;
+             state->output.width = state->cmd->payload->output->width;
+             state->output.height = state->cmd->payload->output->height;
+@@ -128,9 +161,21 @@ static void antithesis_command_execute(AntithesisState *state, AntithesisCommand
+     state->blocking = false;
+ }
+ 
++static uint64_t antithesis_replace(hwaddr addr, uint64_t into, uint8_t new) {
++    uint64_t offset = (addr - 2) % 8;
++    uint64_t shift = offset * 8;
++    uint64_t maska = 0xffffffffffffff00 << shift;
++    uint64_t maskb = 0xffffffffffffff00 >> (64 - shift);
++    uint64_t mask = maska | maskb;
++    uint64_t shifted = new << shift;
++    uint64_t res = (into & mask) | shifted;
++    fflush(logfile);
++    return res;
++}
++
+ static void antithesis_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
+ {
+-    fprintf(logfile, "Write to BAR.\n");
++    fprintf(logfile, "Write to BAR. Register #: %lu\n", addr);
+     fflush(logfile);
+     AntithesisState *state = opaque;
+ 
+@@ -166,35 +211,37 @@ static void antithesis_write(void *opaque, hwaddr addr, uint64_t val, unsigned s
+                 antithesis_command_execute(state, state->cmd);
+             }
+             break;
+-        case ANTITHESIS_REG_ADDR:
++        case ANTITHESIS_REG_ADDR ... ANTITHESIS_REG_SIZE - 1:
+             if (state->cmd->type == ANTITHESIS_COMMAND_WRITE) {
+-                state->cmd->payload->write->addr = val;
++                state->cmd->payload->write->addr = antithesis_replace(addr, state->cmd->payload->write->addr, val);
+             } else if (state->cmd->type == ANTITHESIS_COMMAND_READ) {
+-                state->cmd->payload->read->addr = val;
++                state->cmd->payload->read->addr = antithesis_replace(addr, state->cmd->payload->read->addr, val);
+             } else if (state->cmd->type == ANTITHESIS_COMMAND_OUTPUT) {
+-                state->cmd->payload->output->addr = val;
++                state->cmd->payload->output->addr = antithesis_replace(addr, state->cmd->payload->output->addr, val);
+             }
+             break;
+-        case ANTITHESIS_REG_SIZE:
++        case ANTITHESIS_REG_SIZE ... ANTITHESIS_REG_WIDTH - 1:
+             if (state->cmd->type == ANTITHESIS_COMMAND_WRITE) {
+-                state->cmd->payload->write->size = val;
+-                state->cmd->payload->write->buf = realloc(state->cmd->payload->write->buf, val);
++                state->cmd->payload->write->size = antithesis_replace(addr, state->cmd->payload->write->size, val);
+             }
+             break;
+-        case ANTITHESIS_REG_WIDTH:
++        case ANTITHESIS_REG_WIDTH ... ANTITHESIS_REG_HEIGHT - 1:
+             if (state->cmd->type == ANTITHESIS_COMMAND_OUTPUT) {
+-                state->cmd->payload->output->width = val;
++                state->cmd->payload->output->width = antithesis_replace(addr, state->cmd->payload->output->width, val);
+             }
+             break;
+-        case ANTITHESIS_REG_HEIGHT:
++        case ANTITHESIS_REG_HEIGHT ... ANTITHESIS_REG_DMA - 1:
+             if (state->cmd->type == ANTITHESIS_COMMAND_OUTPUT) {
+-                state->cmd->payload->output->height = val;
++                state->cmd->payload->output->height = antithesis_replace(addr, state->cmd->payload->output->height, val);
+             }
+             break;
++        case ANTITHESIS_REG_DMA ... ANTITHESIS_REG_DMA + 7:
++            state->dma_addr = antithesis_replace(addr, state->dma_addr, val);
++            fprintf(logfile, "DMA address: %lu", state->dma_addr);
++            break;
+         default:
+-            if (state->cmd->type == ANTITHESIS_COMMAND_WRITE) {
+-                state->cmd->payload->write->buf[addr - ANTITHESIS_OFFSET_DATA] = val;
+-            }
++            fprintf(logfile, "Invalid register! (addr: %lu)\n", addr);
++            fflush(logfile);
+     }
+ }
+ 
+@@ -215,12 +262,15 @@ static void antithesis_init(PCIDevice *pdev, Error **err)
+     AntithesisState *state = OBJECT_CHECK(AntithesisState, pdev, TYPE_PCI_ANTITHESIS);
+     state->cmd = malloc(sizeof(*state->cmd));
+     state->cmd->payload = malloc(sizeof(*state->cmd->payload));
++    state->dma_addr = 0;
++    state->dma_segs = NULL;
++    state->dma_seg_count = 0;
+     payload_write = malloc(sizeof(*payload_write));
+     payload_read = malloc(sizeof(*payload_read));
+     payload_output = malloc(sizeof(*payload_output));
+     uint8_t *pci_conf = pdev->config;
+     pci_conf[PCI_INTERRUPT_PIN] = 0;
+-    memory_region_init_io(&state->mmio, OBJECT(state), &antithesis_ops, state, "antithesis-mmio", 128);
++    memory_region_init_io(&state->mmio, OBJECT(state), &antithesis_ops, state, "antithesis-mmio", 64);
+     pci_register_bar(pdev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY, &state->mmio);
+     logfile = fopen("/home/ashy5000/dev/gpu/antithesis/logfile.txt", "w");
+     state->console = graphic_console_init(DEVICE(pdev), 0, &antithesis_gpu_ops, state);

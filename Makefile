@@ -27,8 +27,14 @@ verilog/pack.fs: verilog/pnrgpu.json
 build: ../deps/linux/arch/x86_64/boot/bzImage ../deps/qemu/build/qemu-system-x86_64 ../deps/initramfs.cpio verilog/pack.fs
 
 vm: build
+	cd ../deps; ./qemu/build/qemu-system-x86_64 -kernel linux/arch/x86_64/boot/bzImage -initrd ./initramfs.cpio -append "console=ttyS0 nokaslr" -m 1024 -device antithesis -vga none -serial stdio
+
+clientdebug: build
 	echo "Connect GDB to localhost:1234 and use the 'c' command to start up the system."
 	cd ../deps; ./qemu/build/qemu-system-x86_64 -kernel linux/arch/x86_64/boot/bzImage -initrd ./initramfs.cpio -append "console=ttyS0 nokaslr" -m 1024 -s -S -device antithesis -vga none -serial stdio
+
+hostdebug: build
+	cd ../deps; gdb -args ./qemu/build/qemu-system-x86_64 -kernel linux/arch/x86_64/boot/bzImage -initrd ./initramfs.cpio -append "console=ttyS0 nokaslr" -m 1024 -device antithesis -vga none -serial stdio
 
 synthesize: build
 	cd verilog; openFPGALoader -b tangnano9k pack.fs || { echo "openFPGALoader failed!"; exit 1; }
